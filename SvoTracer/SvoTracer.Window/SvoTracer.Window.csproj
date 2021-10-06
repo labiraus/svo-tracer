@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -6,12 +6,48 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\opentk\src\OpenTK.Compute\OpenTK.Compute.csproj" />
-    <ProjectReference Include="..\..\..\opentk\src\OpenTK.Graphics\OpenTK.Graphics.csproj" />
-    <ProjectReference Include="..\..\..\opentk\src\OpenTK.Mathematics\OpenTK.Mathematics.csproj" />
-    <ProjectReference Include="..\..\..\opentk\src\OpenTK.Windowing.Desktop\OpenTK.Windowing.Desktop.csproj" />
+    <ProjectReference Include="..\..\..\opentk\src\OpenTK.Windowing.GraphicsLibraryFramework\OpenTK.Windowing.GraphicsLibraryFramework.csproj" />
     <ProjectReference Include="..\SvoTracer.Domain\SvoTracer.Domain.csproj" />
 	  <ProjectReference Include="..\SvoTracer.Kernel\SvoTracer.Kernel.csproj" />
+  </ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Condition="'$(TargetFramework)' == 'net472'" Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0-preview.2">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Condition="'$(TargetFramework)' == 'net472'" Include="System.Memory" Version="4.5" />
+		<PackageReference Include="OpenTK.redist.glfw" Version="3.3.4.15" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Include="SvoTracer.Window.GLFW.dll.config">
+			<PackageCopyToOutput>true</PackageCopyToOutput>
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<!-- Make sure the file gets copied for Framework only. -->
+			<PackagePath>contentFiles/any/net472/</PackagePath>
+		</Content>
+	</ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="OpenTK.Compute">
+      <HintPath>..\..\..\opentk\src\OpenTK.Compute\bin\Debug\netcoreapp3.1\OpenTK.Compute.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenTK.Core">
+      <HintPath>..\..\..\opentk\src\OpenTK.Core\bin\Debug\netstandard2.1\OpenTK.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenTK.Graphics">
+      <HintPath>..\..\..\opentk\src\OpenTK.Graphics\bin\Debug\netcoreapp3.1\OpenTK.Graphics.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenTK.Mathematics">
+      <HintPath>..\..\..\opentk\src\OpenTK.Mathematics\bin\Debug\netcoreapp3.1\OpenTK.Mathematics.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.Common">
+      <HintPath>..\..\..\opentk\src\OpenTK.Windowing.Common\bin\Debug\netcoreapp3.1\OpenTK.Windowing.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.Desktop">
+      <HintPath>..\..\..\opentk\src\OpenTK.Windowing.Desktop\bin\Debug\netcoreapp3.1\OpenTK.Windowing.Desktop.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

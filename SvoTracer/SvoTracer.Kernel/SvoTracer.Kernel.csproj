@@ -26,4 +26,10 @@
     <ProjectReference Include="..\SvoTracer.Domain\SvoTracer.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="OpenTK.Mathematics">
+      <HintPath>..\..\..\opentk\src\OpenTK.Mathematics\bin\Debug\netcoreapp3.1\OpenTK.Mathematics.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>
