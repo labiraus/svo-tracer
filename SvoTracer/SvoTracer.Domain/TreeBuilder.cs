@@ -113,14 +113,21 @@ namespace SvoTracer.Domain
             }
         }
 
-        public void SaveTree(string fileName)
+        public void SaveTree(string fileName, byte N, byte depth, uint maxSize = 0)
         {
             if (tree == null){
-                BuildTree(2, 4);
+                BuildTree(N, depth, maxSize);
 			}
             SaveTree(fileName, tree.N, tree);
         }
 
+        /// <summary>
+        /// Builds an octree using inherited class's MakeBlock method
+        /// </summary>
+        /// <param name="N">Depth of inviolate tree</param>
+        /// <param name="depth">Initial tree depth</param>
+        /// <param name="maxSize">Maximum number of blocks available</param>
+        /// <returns></returns>
         public Octree BuildTree(byte N, byte depth, uint maxSize = 0)
         {
             bool[] childrenNeeded = new bool[(uint)(1 << (3 * (int)N + 6))];

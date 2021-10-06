@@ -142,16 +142,26 @@ namespace SvoTracer.Window
                 initVBO();
 
                 var builder = new CubeBuilder(
-                    new Vector3(0.5f, 0.5f, 0.2f),
-                    new Vector3(0.6f, 0.3f, 0.4f),
-                    new Vector3(0.6f, 0.7f, 0.4f),
-                    new Vector3(0.7f, 0.5f, 0.4f),
-                    new Vector3(0.4f, 0.3f, 0.6f),
-                    new Vector3(0.4f, 0.7f, 0.6f),
-                    new Vector3(0.3f, 0.5f, 0.6f),
-                    new Vector3(0.5f, 0.5f, 0.8f));
+                    new Vector3(0.3f, 0.3f, 0.3f),
+                    new Vector3(0.3f, 0.3f, 0.6f),
+                    new Vector3(0.3f, 0.6f, 0.6f),
+                    new Vector3(0.3f, 0.6f, 0.3f),
+                    new Vector3(0.6f, 0.3f, 0.3f),
+                    new Vector3(0.6f, 0.3f, 0.6f),
+                    new Vector3(0.6f, 0.6f, 0.6f),
+                    new Vector3(0.6f, 0.6f, 0.3f));
+                //new Vector3(0.5f, 0.5f, 0.2f),
+                //new Vector3(0.6f, 0.3f, 0.4f),
+                //new Vector3(0.6f, 0.7f, 0.4f),
+                //new Vector3(0.7f, 0.5f, 0.4f),
+                //new Vector3(0.4f, 0.3f, 0.6f),
+                //new Vector3(0.4f, 0.7f, 0.6f),
+                //new Vector3(0.3f, 0.5f, 0.6f),
+                //new Vector3(0.5f, 0.5f, 0.8f));
                 if (!builder.TreeExists("test"))
-                    builder.SaveTree("test");
+                {
+                    builder.SaveTree("test", 5, 7, uint.MaxValue / 64);
+                }
                 var octree = builder.LoadTree("test");
                 blockCount = octree.BlockCount;
 
