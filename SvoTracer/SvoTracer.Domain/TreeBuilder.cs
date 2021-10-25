@@ -82,6 +82,8 @@ namespace SvoTracer.Domain
         {
             try
             {
+                if (!Directory.Exists($"{Environment.CurrentDirectory}\\trees"))
+                    Directory.CreateDirectory($"{Environment.CurrentDirectory}\\trees");
                 FileStream fs = File.Create($"{Environment.CurrentDirectory}\\trees\\{fileName}.oct", 2048, FileOptions.None);
                 BinaryWriter bw = new BinaryWriter(fs);
 

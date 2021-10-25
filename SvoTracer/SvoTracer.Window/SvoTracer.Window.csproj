@@ -3,6 +3,23 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
+    <Platforms>AnyCPU;x86</Platforms>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x86'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x86'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,28 +45,28 @@
 		</Content>
 	</ItemGroup>
 
-  <ItemGroup>
-    <Reference Include="OpenTK.Compute">
-      <HintPath>..\..\..\opentk\src\OpenTK.Compute\bin\Debug\netcoreapp3.1\OpenTK.Compute.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK.Core">
-      <HintPath>..\..\..\opentk\src\OpenTK.Core\bin\Debug\netstandard2.1\OpenTK.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK.Graphics">
-      <HintPath>..\..\..\opentk\src\OpenTK.Graphics\bin\Debug\netcoreapp3.1\OpenTK.Graphics.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK.Mathematics">
-      <HintPath>..\..\..\opentk\src\OpenTK.Mathematics\bin\Debug\netcoreapp3.1\OpenTK.Mathematics.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK.Windowing.Common">
-      <HintPath>..\..\..\opentk\src\OpenTK.Windowing.Common\bin\Debug\netcoreapp3.1\OpenTK.Windowing.Common.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK.Windowing.Desktop">
-      <HintPath>..\..\..\opentk\src\OpenTK.Windowing.Desktop\bin\Debug\netcoreapp3.1\OpenTK.Windowing.Desktop.dll</HintPath>
-    </Reference>
-    <Reference Include="OpenTK.Windowing.GraphicsLibraryFramework">
-      <HintPath>..\..\..\opentk\src\OpenTK.Windowing.GraphicsLibraryFramework\bin\Debug\netcoreapp3.1\OpenTK.Windowing.GraphicsLibraryFramework.dll</HintPath>
-    </Reference>
-  </ItemGroup>
+	<ItemGroup>
+	  <Reference Include="OpenTK.Compute">
+	    <HintPath>..\..\..\opentk\src\OpenTK.Compute\bin\Debug\net5.0\OpenTK.Compute.dll</HintPath>
+	  </Reference>
+	  <Reference Include="OpenTK.Core">
+	    <HintPath>..\..\..\opentk\src\OpenTK.Graphics\bin\Debug\net5.0\OpenTK.Core.dll</HintPath>
+	  </Reference>
+	  <Reference Include="OpenTK.Graphics">
+	    <HintPath>..\..\..\opentk\src\OpenTK.Graphics\bin\Debug\net5.0\OpenTK.Graphics.dll</HintPath>
+	  </Reference>
+	  <Reference Include="OpenTK.Mathematics">
+	    <HintPath>..\..\..\opentk\src\OpenTK.Graphics\bin\Debug\net5.0\OpenTK.Mathematics.dll</HintPath>
+	  </Reference>
+	  <Reference Include="OpenTK.Windowing.Common">
+	    <HintPath>..\..\..\opentk\src\OpenTK.Windowing.Desktop\bin\Debug\net5.0\OpenTK.Windowing.Common.dll</HintPath>
+	  </Reference>
+	  <Reference Include="OpenTK.Windowing.Desktop">
+	    <HintPath>..\..\..\opentk\src\OpenTK.Windowing.Desktop\bin\Debug\net5.0\OpenTK.Windowing.Desktop.dll</HintPath>
+	  </Reference>
+	  <Reference Include="OpenTK.Windowing.GraphicsLibraryFramework">
+	    <HintPath>..\..\..\opentk\src\OpenTK.Windowing.Desktop\bin\Debug\net5.0\OpenTK.Windowing.GraphicsLibraryFramework.dll</HintPath>
+	  </Reference>
+	</ItemGroup>
 
 </Project>

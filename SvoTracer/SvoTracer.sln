@@ -3,93 +3,47 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.31613.86
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SvoTracer.Kernel", "SvoTracer.Kernel\SvoTracer.Kernel.csproj", "{00387E95-6E89-4CC8-B214-BAA5AFDF237C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SvoTracer.Kernel", "SvoTracer.Kernel\SvoTracer.Kernel.csproj", "{00387E95-6E89-4CC8-B214-BAA5AFDF237C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SvoTracer.Domain", "SvoTracer.Domain\SvoTracer.Domain.csproj", "{F90D8545-EAB9-4155-80DE-08CCE228DAB7}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SvoTracer.Domain", "SvoTracer.Domain\SvoTracer.Domain.csproj", "{F90D8545-EAB9-4155-80DE-08CCE228DAB7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SvoTracer.Window", "SvoTracer.Window\SvoTracer.Window.csproj", "{1E58C79E-E9AB-457F-BF17-90388B284222}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTK.Core", "..\..\opentk\src\OpenTK.Core\OpenTK.Core.csproj", "{E0D5DA71-0AE8-498C-B800-A5436691D6F2}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "OpenTK", "OpenTK", "{14AB3000-B5BF-4F52-8E34-B643077CDCA7}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTK.Compute", "..\..\opentk\src\OpenTK.Compute\OpenTK.Compute.csproj", "{E1941012-1F62-4364-9A76-1E5907103F08}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTK.Graphics", "..\..\opentk\src\OpenTK.Graphics\OpenTK.Graphics.csproj", "{D7BA99FB-42DD-47B3-A13A-5E92DF93D3CF}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTK.Input", "..\..\opentk\src\OpenTK.Input\OpenTK.Input.csproj", "{2FEC950D-18BD-422D-9D7B-7EA1C6E248A4}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTK.Mathematics", "..\..\opentk\src\OpenTK.Mathematics\OpenTK.Mathematics.csproj", "{8075DE7A-9482-431F-A1F3-0ED1999CD5D2}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTK.Windowing.Common", "..\..\opentk\src\OpenTK.Windowing.Common\OpenTK.Windowing.Common.csproj", "{23A920DE-F700-449F-85C5-CC009DB5B628}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTK.Windowing.Desktop", "..\..\opentk\src\OpenTK.Windowing.Desktop\OpenTK.Windowing.Desktop.csproj", "{DC9B07F1-D15C-4D71-B267-7B165D276FB9}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenTK.Windowing.GraphicsLibraryFramework", "..\..\opentk\src\OpenTK.Windowing.GraphicsLibraryFramework\OpenTK.Windowing.GraphicsLibraryFramework.csproj", "{9528C0AC-47DD-447D-B9C5-3604F8630DA7}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SvoTracer.Window", "SvoTracer.Window\SvoTracer.Window.csproj", "{1E58C79E-E9AB-457F-BF17-90388B284222}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x86 = Debug|x86
 		Release|Any CPU = Release|Any CPU
+		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{00387E95-6E89-4CC8-B214-BAA5AFDF237C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{00387E95-6E89-4CC8-B214-BAA5AFDF237C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00387E95-6E89-4CC8-B214-BAA5AFDF237C}.Debug|x86.ActiveCfg = Debug|x86
+		{00387E95-6E89-4CC8-B214-BAA5AFDF237C}.Debug|x86.Build.0 = Debug|x86
 		{00387E95-6E89-4CC8-B214-BAA5AFDF237C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{00387E95-6E89-4CC8-B214-BAA5AFDF237C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00387E95-6E89-4CC8-B214-BAA5AFDF237C}.Release|x86.ActiveCfg = Release|x86
+		{00387E95-6E89-4CC8-B214-BAA5AFDF237C}.Release|x86.Build.0 = Release|x86
 		{F90D8545-EAB9-4155-80DE-08CCE228DAB7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F90D8545-EAB9-4155-80DE-08CCE228DAB7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F90D8545-EAB9-4155-80DE-08CCE228DAB7}.Debug|x86.ActiveCfg = Debug|x86
+		{F90D8545-EAB9-4155-80DE-08CCE228DAB7}.Debug|x86.Build.0 = Debug|x86
 		{F90D8545-EAB9-4155-80DE-08CCE228DAB7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F90D8545-EAB9-4155-80DE-08CCE228DAB7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F90D8545-EAB9-4155-80DE-08CCE228DAB7}.Release|x86.ActiveCfg = Release|x86
+		{F90D8545-EAB9-4155-80DE-08CCE228DAB7}.Release|x86.Build.0 = Release|x86
 		{1E58C79E-E9AB-457F-BF17-90388B284222}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{1E58C79E-E9AB-457F-BF17-90388B284222}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1E58C79E-E9AB-457F-BF17-90388B284222}.Debug|x86.ActiveCfg = Debug|x86
+		{1E58C79E-E9AB-457F-BF17-90388B284222}.Debug|x86.Build.0 = Debug|x86
 		{1E58C79E-E9AB-457F-BF17-90388B284222}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1E58C79E-E9AB-457F-BF17-90388B284222}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E0D5DA71-0AE8-498C-B800-A5436691D6F2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{E0D5DA71-0AE8-498C-B800-A5436691D6F2}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{E0D5DA71-0AE8-498C-B800-A5436691D6F2}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{E0D5DA71-0AE8-498C-B800-A5436691D6F2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E1941012-1F62-4364-9A76-1E5907103F08}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{E1941012-1F62-4364-9A76-1E5907103F08}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{E1941012-1F62-4364-9A76-1E5907103F08}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{E1941012-1F62-4364-9A76-1E5907103F08}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D7BA99FB-42DD-47B3-A13A-5E92DF93D3CF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D7BA99FB-42DD-47B3-A13A-5E92DF93D3CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D7BA99FB-42DD-47B3-A13A-5E92DF93D3CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D7BA99FB-42DD-47B3-A13A-5E92DF93D3CF}.Release|Any CPU.Build.0 = Release|Any CPU
-		{2FEC950D-18BD-422D-9D7B-7EA1C6E248A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2FEC950D-18BD-422D-9D7B-7EA1C6E248A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2FEC950D-18BD-422D-9D7B-7EA1C6E248A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2FEC950D-18BD-422D-9D7B-7EA1C6E248A4}.Release|Any CPU.Build.0 = Release|Any CPU
-		{8075DE7A-9482-431F-A1F3-0ED1999CD5D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8075DE7A-9482-431F-A1F3-0ED1999CD5D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8075DE7A-9482-431F-A1F3-0ED1999CD5D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{8075DE7A-9482-431F-A1F3-0ED1999CD5D2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{23A920DE-F700-449F-85C5-CC009DB5B628}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{23A920DE-F700-449F-85C5-CC009DB5B628}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{23A920DE-F700-449F-85C5-CC009DB5B628}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{23A920DE-F700-449F-85C5-CC009DB5B628}.Release|Any CPU.Build.0 = Release|Any CPU
-		{DC9B07F1-D15C-4D71-B267-7B165D276FB9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DC9B07F1-D15C-4D71-B267-7B165D276FB9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DC9B07F1-D15C-4D71-B267-7B165D276FB9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DC9B07F1-D15C-4D71-B267-7B165D276FB9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9528C0AC-47DD-447D-B9C5-3604F8630DA7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9528C0AC-47DD-447D-B9C5-3604F8630DA7}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9528C0AC-47DD-447D-B9C5-3604F8630DA7}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9528C0AC-47DD-447D-B9C5-3604F8630DA7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1E58C79E-E9AB-457F-BF17-90388B284222}.Release|x86.ActiveCfg = Release|x86
+		{1E58C79E-E9AB-457F-BF17-90388B284222}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-		{E0D5DA71-0AE8-498C-B800-A5436691D6F2} = {14AB3000-B5BF-4F52-8E34-B643077CDCA7}
-		{E1941012-1F62-4364-9A76-1E5907103F08} = {14AB3000-B5BF-4F52-8E34-B643077CDCA7}
-		{D7BA99FB-42DD-47B3-A13A-5E92DF93D3CF} = {14AB3000-B5BF-4F52-8E34-B643077CDCA7}
-		{2FEC950D-18BD-422D-9D7B-7EA1C6E248A4} = {14AB3000-B5BF-4F52-8E34-B643077CDCA7}
-		{8075DE7A-9482-431F-A1F3-0ED1999CD5D2} = {14AB3000-B5BF-4F52-8E34-B643077CDCA7}
-		{23A920DE-F700-449F-85C5-CC009DB5B628} = {14AB3000-B5BF-4F52-8E34-B643077CDCA7}
-		{DC9B07F1-D15C-4D71-B267-7B165D276FB9} = {14AB3000-B5BF-4F52-8E34-B643077CDCA7}
-		{9528C0AC-47DD-447D-B9C5-3604F8630DA7} = {14AB3000-B5BF-4F52-8E34-B643077CDCA7}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BCEF0941-0D52-4483-BEE9-F79B2ED15939}

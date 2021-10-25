@@ -228,7 +228,7 @@ BlockData background(WorkingData *_data)
     return output;
 }
 
-void writeData(image2d_t outputImage, WorkingData *_data)
+void writeData(__write_only image2d_t outputImage, WorkingData *_data)
 {
     write_imagef(outputImage, _data->Coord, (float4)(_data->ColourR, _data->ColourB, _data->ColourG, 1));
 }
