@@ -19,20 +19,5 @@ namespace SvoTracer.Kernel
                 return reader.ReadToEnd();
             }
         }
-
-        public static string FuncName(Function func)
-        {
-            switch (func)
-            {
-                case Function.Sine:
-                    return "sine_wave";
-                default:
-                    return "";
-            }
-        }
-    }
-    public enum Function
-    {
-        Sine
     }
 }

@@ -40,45 +40,8 @@ namespace SvoTracer.Window
 		private List<Location> graftingAddresses = new();
 
 		private readonly object _resizeLock = new();
-		private const bool sine = false;
 
-		#endregion
-
-		#region //GLCL Objects
-		private OpenTK.Compute.OpenCL.CLContext clContext;
-		private CLCommandQueue commandQueue;
-		private CLDevice device;
-
-		private CLBuffer baseBlockBuffer;
-		private CLBuffer blockBuffer;
-		private CLBuffer usageBuffer;
-		private CLBuffer childRequestIdBuffer;
-		private CLBuffer childRequestBuffer;
-		private CLBuffer parentSizeBuffer;
-		private CLBuffer parentResidencyBuffer;
-		private CLBuffer parentsBuffer;
-		private CLBuffer dereferenceQueueBuffer;
-		private CLBuffer dereferenceRemainingBuffer;
-		private CLBuffer semaphorBuffer;
-		private CLBuffer pruningBuffer;
-		private CLBuffer pruningBlockDataBuffer;
-		private CLBuffer pruningAddressesBuffer;
-		private CLBuffer graftingBuffer;
-		private CLBuffer graftingBlocksBuffer;
-		private CLBuffer graftingAddressesBuffer;
-		private CLBuffer holdingAddressesBuffer;
-		private CLBuffer addressPositionBuffer;
-
-		private CLKernel prune;
-		private CLKernel graft;
-		private CLKernel traceVoxel;
-		private CLKernel sineWave;
-		private CLKernel traceMesh;
-		private CLKernel traceParticle;
-		private CLKernel spawnRays;
-		private CLKernel traceLight;
-		private CLKernel resolveImage;
-		private CLImage clRenderbuffer;
+		private ComputeManager _computeManager;
 		private RenderbufferHandle glRenderbuffer = RenderbufferHandle.Zero;
 		private FramebufferHandle framebuffer = FramebufferHandle.Zero;
 		#endregion
@@ -91,6 +54,12 @@ namespace SvoTracer.Window
 				Size = new OpenTK.Mathematics.Vector2i(width, height)
 			})
 		{
+			_computeManager = buildComputeManager();
+		}
+
+		unsafe private ComputeManager buildComputeManager()
+		{
+			return ComputeManagerFactory.Build(GLFW.GetWGLContext(WindowPtr), GLFW.GetWin32Window(base.WindowPtr), new[] { "kernel.cl" });
 		}
 
 		#endregion
@@ -102,7 +71,6 @@ namespace SvoTracer.Window
 			Stopwatch watch = new Stopwatch();
 			watch.Start();
 			setDebug();
-			createContext();
 
 			try
 			{
@@ -110,8 +78,8 @@ namespace SvoTracer.Window
 				framebuffer = GL.CreateFramebuffer();
 				GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
 
+				initRenderBuffer();
 				setupKernels();
-				//setupSine();
 				initialized = true;
 			}
 			catch (Exception ex)
@@ -125,52 +93,6 @@ namespace SvoTracer.Window
 				watch.Stop();
 				Console.WriteLine(watch.Elapsed);
 			}
-		}
-
-		unsafe private void createContext()
-		{
-			CLResultCode resultCode;
-			resultCode = CL.GetPlatformIDs(out CLPlatform[] platformIds);
-			HandleResultCode(resultCode, "CL.GetPlatformIds");
-			CLPlatform platform = new CLPlatform();
-			foreach (var platformId in platformIds)
-			{
-				resultCode = platformId.SupportsPlatformExtension("cl_khr_gl_sharing", out bool supported);
-				HandleResultCode(resultCode, "SupportsPlatformExtension");
-				if (supported)
-				{
-					platform = platformId;
-					break;
-				}
-			}
-			resultCode = platform.GetDeviceIDs(DeviceType.Gpu, out CLDevice[] devices);
-			HandleResultCode(resultCode, "GetDeviceIDs");
-			foreach (var deviceId in devices)
-			{
-				resultCode = deviceId.GetDeviceInfo(DeviceInfo.Extensions, out byte[] bytes);
-				HandleResultCode(resultCode, "GetDeviceInfo");
-				var extensions = Encoding.ASCII.GetString(bytes).Split(" ");
-				if (extensions.Any(x => x == "cl_khr_gl_sharing"))
-				{
-					device = deviceId;
-					break;
-				}
-			}
-			var props = new CLContextProperties(platform)
-			{
-				// if windows
-				ContextInteropUserSync = true,
-				GlContextKHR = GLFW.GetWGLContext(base.WindowPtr),
-				WglHDCKHR = GLFW.GetWin32Window(base.WindowPtr)
-			};
-			// if linux
-			//props.GlContextKHR = (IntPtr)GLFW.GetGLXContext(base.WindowPtr);
-			//props.GlxDisplayKHR = (IntPtr)GLFW.GetX11Window(base.WindowPtr);
-
-			clContext = props.CreateContextFromType(DeviceType.Gpu, null, IntPtr.Zero, out resultCode);
-			HandleResultCode(resultCode, "CreateContextFromType");
-			commandQueue = clContext.CreateCommandQueueWithProperties(device, new CLCommandQueueProperties(), out resultCode);
-			HandleResultCode(resultCode, "CreateCommandQueueWithProperties");
 		}
 
 		unsafe private void initRenderBuffer()
@@ -190,11 +112,7 @@ namespace SvoTracer.Window
 				if (err != FramebufferStatus.FramebufferComplete)
 					Console.WriteLine(err);
 				GL.Flush();
-
-				clRenderbuffer = clContext.CreateFromGLRenderbuffer(MemoryFlags.WriteOnly, (uint)glRenderbuffer.Handle, out CLResultCode resultCode);
-				HandleResultCode(resultCode, "CreateFromGLRenderbuffer");
-				resultCode = clRenderbuffer.RetainMemoryObject();
-				HandleResultCode(resultCode, "RetainMemoryObject");
+				_computeManager.InitRenderbuffer((uint)glRenderbuffer.Handle);
 			}
 		}
 
@@ -202,79 +120,8 @@ namespace SvoTracer.Window
 
 		#region //Data Processing
 
-		private void setupSine()
-		{
-			var kernel = KernelLoader.Get("sine.cl");
-			if (kernel == null)
-			{
-				throw new Exception("Could not find kernel 'sine.cl'");
-			}
-			CLProgram program = clContext.CreateProgramWithSource(kernel, out CLResultCode resultCode);
-			HandleResultCode(resultCode, "CreateProgramWithSource");
-			resultCode = program.BuildProgram(new[] { device }, null, null, IntPtr.Zero);
-			if (resultCode == CLResultCode.BuildProgramFailure)
-			{
-				program.GetProgramBuildInfo(device, ProgramBuildInfo.Log, out byte[] bytes);
-				Console.WriteLine(Encoding.ASCII.GetString(bytes));
-			}
-			HandleResultCode(resultCode, "BuildProgram");
-
-			sineWave = program.CreateKernel("sine_wave", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:sine_wave");
-			resultCode = sineWave.SetKernelArg(1, (uint)this.Size.X);
-			HandleResultCode(resultCode, "SetKernelArg:sineWave:width");
-			resultCode = sineWave.SetKernelArg(2, (uint)this.Size.Y);
-			HandleResultCode(resultCode, "SetKernelArg:sineWave:height");
-		}
-
-		private void runSine()
-		{
-			var resultCode = commandQueue.EnqueueAcquireGLObjects(new[] { clRenderbuffer.Handle }, null, out OpenTK.Compute.OpenCL.CLEvent acquireImage);
-			HandleResultCode(resultCode, "EnqueueAcquireGLObjects");
-
-			resultCode = sineWave.SetKernelArg(0, clRenderbuffer);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:clRenderBuffer");
-			resultCode = sineWave.SetKernelArg(3, tick / 100.0f);
-			HandleResultCode(resultCode, "SetKernelArg:sineWave:time");
-
-			resultCode = commandQueue.EnqueueNDRangeKernel(sineWave, 2, null, new[] { (nuint)Size.X, (nuint)Size.Y }, null, new[] { acquireImage }, out OpenTK.Compute.OpenCL.CLEvent kernelRun);
-			HandleResultCode(resultCode, "EnqueueNDRangeKernel:sineWave");
-
-			//var output = new float[16];
-			//commandQueue.EnqueueReadImage(clRenderBuffer, true, new nuint[] { 0, 0, 0 }, new nuint[] { 4, 1, 1 }, 0, 0, output, new[] { kernelRun }, out _);
-			//Console.WriteLine(output[1]);
-
-			// Release 
-			resultCode = commandQueue.EnqueueReleaseGLObjects(new[] { clRenderbuffer.Handle }, new[] { kernelRun }, out _);
-			HandleResultCode(resultCode, "EnqueueReleaseGLObjects");
-			resultCode = commandQueue.Flush();
-			HandleResultCode(resultCode, "Flush");
-		}
-
 		private void setupKernels()
 		{
-			if (sine)
-			{
-				setupSine();
-				return;
-			}
-			var kernel = KernelLoader.Get("kernel.cl");
-			if (kernel == null)
-			{
-				throw new Exception("Could not find kernel 'kernel.cl'");
-			}
-			CLProgram program = clContext.CreateProgramWithSource(kernel, out CLResultCode resultCode);
-			HandleResultCode(resultCode, "CreateProgramWithSource");
-			resultCode = program.BuildProgram(new[] { device }, null, null, IntPtr.Zero);
-			if (resultCode == CLResultCode.BuildProgramFailure)
-			{
-				program.GetProgramBuildInfo(device, ProgramBuildInfo.Log, out byte[] bytes);
-				Console.WriteLine(Encoding.ASCII.GetString(bytes));
-			}
-			HandleResultCode(resultCode, "BuildProgram");
-			// Set up the buffers
-			initRenderBuffer();
-
 			var builder = new CubeBuilder(
 				new Vector3(0.3f, 0.3f, 0.3f),
 				new Vector3(0.3f, 0.3f, 0.6f),
@@ -335,106 +182,46 @@ namespace SvoTracer.Window
 			bool[] parentResidency = new bool[parentMaxSize];
 			Parent[] parents = new Parent[parentMaxSize];
 
-			baseBlockBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, octree.BaseBlocks, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:baseBlockBuffer");
-			blockBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, octree.Blocks, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:blockBuffer");
-			usageBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, new Usage[octree.BlockCount >> 3], out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:usageBuffer");
-			childRequestIdBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, new uint[1], out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:childRequestIdBuffer");
-			childRequestBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, new ChildRequest[_traceInput.MaxChildRequestId], out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:childRequestBuffer");
-			parentSizeBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, new uint[1], out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:parentSizeBuffer");
-			parentResidencyBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, parentResidency, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:parentResidencyBuffer");
-			parentsBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, parents, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:parentsBuffer");
-			dereferenceQueueBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, new ulong[octree.BlockCount], out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:dereferenceQueueBuffer");
-			dereferenceRemainingBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, new uint[1], out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:dereferenceRemainingBuffer");
-			semaphorBuffer = clContext.CreateBuffer(MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, new int[1], out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:semaphorBuffer");
+			_computeManager.InitBuffer(BufferName.BaseBlocks, octree.BaseBlocks);
+			_computeManager.InitBuffer(BufferName.Blocks, octree.Blocks);
+			_computeManager.InitBuffer(BufferName.Usage, new Usage[octree.BlockCount >> 3]);
+			_computeManager.InitBuffer(BufferName.ChildRequestId, new uint[1]);
+			_computeManager.InitBuffer(BufferName.ChildRequests, new ChildRequest[_traceInput.MaxChildRequestId]);
+			_computeManager.InitBuffer(BufferName.ParentSize, new uint[1]);
+			_computeManager.InitBuffer(BufferName.ParentResidency, parentResidency);
+			_computeManager.InitBuffer(BufferName.Parents, parents);
+			_computeManager.InitBuffer(BufferName.DereferenceQueue, new ulong[octree.BlockCount]);
+			_computeManager.InitBuffer(BufferName.DereferenceRemaining, new uint[1]);
+			_computeManager.InitBuffer(BufferName.Semaphor, new uint[1]);
 
-			prune = program.CreateKernel("prune", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:prune");
-			resultCode = prune.SetKernelArg(0, baseBlockBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:baseBlockBuffer");
-			resultCode = prune.SetKernelArg(1, blockBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:blockBuffer");
-			resultCode = prune.SetKernelArg(2, usageBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:usageBuffer");
-			resultCode = prune.SetKernelArg(3, childRequestIdBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:childRequestIdBuffer");
-			resultCode = prune.SetKernelArg(4, childRequestBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:childRequestBuffer");
-			resultCode = prune.SetKernelArg(5, parentSizeBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:parentSizeBuffer");
-			resultCode = prune.SetKernelArg(6, parentResidencyBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:parentResidencyBuffer");
-			resultCode = prune.SetKernelArg(7, parentsBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:parentsBuffer");
-			resultCode = prune.SetKernelArg(8, dereferenceQueueBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:dereferenceQueueBuffer");
-			resultCode = prune.SetKernelArg(9, dereferenceRemainingBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:dereferenceRemainingBuffer");
-			resultCode = prune.SetKernelArg(10, semaphorBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:prune:semaphorBuffer");
+			_computeManager.SetArg(KernelName.Prune, "bases", BufferName.BaseBlocks);
+			_computeManager.SetArg(KernelName.Prune, "blocks", BufferName.Blocks);
+			_computeManager.SetArg(KernelName.Prune, "usage", BufferName.Usage);
+			_computeManager.SetArg(KernelName.Prune, "childRequestId", BufferName.ChildRequestId);
+			_computeManager.SetArg(KernelName.Prune, "childRequests", BufferName.ChildRequests);
+			_computeManager.SetArg(KernelName.Prune, "parentSize", BufferName.ParentSize);
+			_computeManager.SetArg(KernelName.Prune, "parentResidency", BufferName.ParentResidency);
+			_computeManager.SetArg(KernelName.Prune, "parents", BufferName.Parents);
+			_computeManager.SetArg(KernelName.Prune, "dereferenceQueue", BufferName.DereferenceQueue);
+			_computeManager.SetArg(KernelName.Prune, "dereferenceRemaining", BufferName.DereferenceRemaining);
+			_computeManager.SetArg(KernelName.Prune, "semaphor", BufferName.Semaphor);
 
-			graft = program.CreateKernel("graft", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:graft");
-			resultCode = graft.SetKernelArg(0, blockBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:blockBuffer");
-			resultCode = graft.SetKernelArg(1, usageBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:usageBuffer");
-			resultCode = graft.SetKernelArg(2, childRequestIdBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:childRequestIdBuffer");
-			resultCode = graft.SetKernelArg(3, childRequestBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:childRequestBuffer");
-			resultCode = graft.SetKernelArg(4, parentSizeBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:parentSizeBuffer");
-			resultCode = graft.SetKernelArg(5, parentResidencyBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:parentResidencyBuffer");
-			resultCode = graft.SetKernelArg(6, parentsBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:parentsBuffer");
-			resultCode = graft.SetKernelArg(7, dereferenceQueueBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:dereferenceQueueBuffer");
-			resultCode = graft.SetKernelArg(8, dereferenceRemainingBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:dereferenceRemainingBuffer");
-			resultCode = graft.SetKernelArg(9, semaphorBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graft:semaphorBuffer");
+			_computeManager.SetArg(KernelName.Graft, "blocks", BufferName.Blocks);
+			_computeManager.SetArg(KernelName.Graft, "usage", BufferName.Usage);
+			_computeManager.SetArg(KernelName.Graft, "childRequestId", BufferName.ChildRequestId);
+			_computeManager.SetArg(KernelName.Graft, "childRequests", BufferName.ChildRequests);
+			_computeManager.SetArg(KernelName.Graft, "parentSize", BufferName.ParentSize);
+			_computeManager.SetArg(KernelName.Graft, "parentResidency", BufferName.ParentResidency);
+			_computeManager.SetArg(KernelName.Graft, "parents", BufferName.Parents);
+			_computeManager.SetArg(KernelName.Graft, "dereferenceQueue", BufferName.DereferenceQueue);
+			_computeManager.SetArg(KernelName.Graft, "dereferenceRemaining", BufferName.DereferenceRemaining);
+			_computeManager.SetArg(KernelName.Graft, "semaphor", BufferName.Semaphor);
 
-			traceVoxel = program.CreateKernel("traceVoxel", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:traceVoxel");
-			resultCode = traceVoxel.SetKernelArg(0, baseBlockBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:baseBlockBuffer");
-			resultCode = traceVoxel.SetKernelArg(1, blockBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:blockBuffer");
-			resultCode = traceVoxel.SetKernelArg(2, usageBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:usageBuffer");
-			resultCode = traceVoxel.SetKernelArg(3, childRequestIdBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:childRequestIdBuffer");
-			resultCode = traceVoxel.SetKernelArg(4, childRequestBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:childRequestBuffer");
-			resultCode = traceVoxel.SetKernelArg(5, clRenderbuffer);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:glImageBuffer");
-
-			traceMesh = program.CreateKernel("traceMesh", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:traceMesh");
-
-			traceParticle = program.CreateKernel("traceParticle", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:traceParticle");
-
-			spawnRays = program.CreateKernel("spawnRays", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:spawnRays");
-
-			traceLight = program.CreateKernel("traceLight", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:traceLight");
-
-			resolveImage = program.CreateKernel("resolveImage", out resultCode);
-			HandleResultCode(resultCode, "CreateKernel:resolveImage");
+			_computeManager.SetArg(KernelName.TraceVoxel, "bases", BufferName.BaseBlocks);
+			_computeManager.SetArg(KernelName.TraceVoxel, "blocks", BufferName.Blocks);
+			_computeManager.SetArg(KernelName.TraceVoxel, "usage", BufferName.Usage);
+			_computeManager.SetArg(KernelName.TraceVoxel, "childRequestId", BufferName.ChildRequestId);
+			_computeManager.SetArg(KernelName.TraceVoxel, "childRequests", BufferName.ChildRequests);
 
 			this.KeyDown += MainWindow_KeyDown;
 			this.KeyUp += MainWindow_KeyUp;
@@ -447,18 +234,12 @@ namespace SvoTracer.Window
 		{
 			lock (_resizeLock)
 			{
-				if (sine)
-				{
-					runSine();
-					return;
-				}
-				_traceInput.ScreenSize = base.Size;
-				_traceInput.FoV[0] = (float)base.Size.X / (float)base.Size.Y * (float)Math.PI / 4.0f;
+				_traceInput.ScreenSize = Size;
+				_traceInput.FoV[0] = (float)Size.X / (float)Size.Y * (float)Math.PI / 4.0f;
 				_traceInput.Tick = tick;
 				_updateInput.Tick = tick;
 				//Flush child request buffer
-				var resultCode = commandQueue.EnqueueWriteBuffer(childRequestIdBuffer, false, 0, new uint[] { 0 }, null, out _);
-				HandleResultCode(resultCode, "EnqueueWriteBuffer:childRequestIdBuffer");
+				_computeManager.WriteBuffer(BufferName.ChildRequestId, new uint[] { 0 });
 
 				runPrune();
 				runGraft();
@@ -476,10 +257,6 @@ namespace SvoTracer.Window
 			{
 				if (pruning.Count == 0) return;
 
-				pruningBuffer.ReleaseMemoryObject();
-				pruningBlockDataBuffer.ReleaseMemoryObject();
-				pruningAddressesBuffer.ReleaseMemoryObject();
-
 				pruningArray = pruning.ToArray();
 				pruningBlockDataArray = pruningBlockData.ToArray();
 				pruningAddressesArray = pruningAddresses.ToArray();
@@ -489,34 +266,23 @@ namespace SvoTracer.Window
 				pruningAddresses = new List<Location>();
 			}
 
-			pruningBuffer = clContext.CreateBuffer(MemoryFlags.None, pruningArray, out CLResultCode resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:pruningBuffer");
-			pruningBlockDataBuffer = clContext.CreateBuffer(MemoryFlags.None, pruningBlockDataArray, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:pruningBlockDataBuffer");
-			pruningAddressesBuffer = clContext.CreateBuffer(MemoryFlags.None, pruningAddressesArray, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:pruningAddressesBuffer");
+			_computeManager.InitBuffer(BufferName.Pruning, pruningArray);
+			_computeManager.SetArg(KernelName.Prune, "pruning", BufferName.Pruning);
 
-			var waitEvents = new OpenTK.Compute.OpenCL.CLEvent[3];
-			resultCode = commandQueue.EnqueueWriteBuffer(dereferenceQueueBuffer, false, 0, new ulong[blockCount], null, out waitEvents[0]);
-			HandleResultCode(resultCode, "EnqueueWriteBuffer:dereferenceQueueBuffer");
-			resultCode = commandQueue.EnqueueWriteBuffer(dereferenceRemainingBuffer, false, 0, new uint[] { 0 }, null, out waitEvents[1]);
-			HandleResultCode(resultCode, "EnqueueWriteBuffer:dereferenceRemainingBuffer");
-			resultCode = commandQueue.EnqueueWriteBuffer(semaphorBuffer, false, 0, new int[] { 0 }, null, out waitEvents[2]);
-			HandleResultCode(resultCode, "EnqueueWriteBuffer:semaphorBuffer");
+			_computeManager.InitBuffer(BufferName.PruningBlockData, pruningBlockDataArray);
+			_computeManager.SetArg(KernelName.Prune, "pruningBlockData", BufferName.BaseBlocks);
 
-			resultCode = prune.SetKernelArg(11, pruningBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:pruningBuffer");
-			resultCode = prune.SetKernelArg(12, pruningBlockDataBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:pruningBlockDataBuffer");
-			resultCode = prune.SetKernelArg(13, pruningAddressesBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:pruningAddressesBuffer");
-			resultCode = prune.SetKernelArg(14, _updateInput);
-			HandleResultCode(resultCode, "SetKernelArg:_updateInput");
+			_computeManager.InitBuffer(BufferName.PruningAddresses, pruningAddressesArray);
+			_computeManager.SetArg(KernelName.Prune, "pruningAddresses", BufferName.BaseBlocks);
+			_computeManager.SetArg(KernelName.Prune, "inputData", _updateInput);
 
-			resultCode = commandQueue.EnqueueNDRangeKernel(prune, 1, null, new[] { (nuint)pruningArray.Length }, null, waitEvents, out _);
-			HandleResultCode(resultCode, "EnqueueNDRangeKernel:prune");
-			resultCode = commandQueue.Flush();
-			HandleResultCode(resultCode, "Flush");
+			var waitEvents = new List<OpenTK.Compute.OpenCL.CLEvent>();
+			waitEvents.Add(_computeManager.WriteBuffer(BufferName.DereferenceQueue, new ulong[blockCount], null));
+			waitEvents.Add(_computeManager.WriteBuffer(BufferName.DereferenceRemaining, new uint[] { 0 }, null));
+			waitEvents.Add(_computeManager.WriteBuffer(BufferName.Semaphor, new int[] { 0 }, null));
+
+			_computeManager.Enqueue(KernelName.Prune, new[] { (nuint)pruningArray.Length }, waitEvents.ToArray());
+			_computeManager.Flush();
 		}
 
 		private void runGraft()
@@ -529,10 +295,6 @@ namespace SvoTracer.Window
 			{
 				if (grafting.Count == 0) return;
 
-				graftingBuffer.ReleaseMemoryObject();
-				graftingBlocksBuffer.ReleaseMemoryObject();
-				graftingAddressesBuffer.ReleaseMemoryObject();
-
 				graftingArray = grafting.ToArray();
 				graftingBlocksArray = graftingBlocks.ToArray();
 				graftingAddressesArray = graftingAddresses.ToArray();
@@ -543,63 +305,40 @@ namespace SvoTracer.Window
 			}
 
 			_updateInput.GraftSize = (uint)graftingBlocksArray.Count();
-			graftingBuffer = clContext.CreateBuffer(MemoryFlags.None, graftingArray, out CLResultCode resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:graftingBuffer");
-			graftingBlocksBuffer = clContext.CreateBuffer(MemoryFlags.None, graftingBlocksArray, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:graftingBlocksBuffer");
-			graftingAddressesBuffer = clContext.CreateBuffer(MemoryFlags.None, graftingAddressesArray, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:graftingAddressesBuffer");
-			holdingAddressesBuffer = clContext.CreateBuffer(MemoryFlags.None, new uint[_updateInput.GraftSize], out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:holdingAddressesBuffer");
-			addressPositionBuffer = clContext.CreateBuffer(MemoryFlags.None, new uint[] { 0 }, out resultCode);
-			HandleResultCode(resultCode, "CreateBuffer:addressPositionBuffer");
+			_computeManager.InitBuffer(BufferName.Grafting, graftingArray);
+			_computeManager.SetArg(KernelName.Graft, "grafting", BufferName.Pruning);
 
-			var waitEvents = new OpenTK.Compute.OpenCL.CLEvent[3];
-			resultCode = commandQueue.EnqueueWriteBuffer(dereferenceQueueBuffer, false, 0, new ulong[blockCount], null, out waitEvents[0]);
-			HandleResultCode(resultCode, "EnqueueWriteBuffer:dereferenceQueueBuffer");
-			resultCode = commandQueue.EnqueueWriteBuffer(dereferenceRemainingBuffer, false, 0, new uint[] { 0 }, null, out waitEvents[1]);
-			HandleResultCode(resultCode, "EnqueueWriteBuffer:dereferenceRemainingBuffer");
-			resultCode = commandQueue.EnqueueWriteBuffer(semaphorBuffer, false, 0, new int[] { 0 }, null, out waitEvents[2]);
-			HandleResultCode(resultCode, "EnqueueWriteBuffer:semaphorBuffer");
+			_computeManager.InitBuffer(BufferName.GraftingBlocks, graftingBlocksArray);
+			_computeManager.SetArg(KernelName.Graft, "graftingBlocks", BufferName.BaseBlocks);
 
-			resultCode = graft.SetKernelArg(10, graftingBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graftingBuffer");
-			resultCode = graft.SetKernelArg(11, graftingBlocksBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graftingBlocksBuffer");
-			resultCode = graft.SetKernelArg(12, graftingAddressesBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:graftingAddressesBuffer");
-			resultCode = graft.SetKernelArg(13, holdingAddressesBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:holdingAddressesBuffer");
-			resultCode = graft.SetKernelArg(14, addressPositionBuffer);
-			HandleResultCode(resultCode, "SetKernelArg:addressPositionBuffer");
-			resultCode = graft.SetKernelArg(15, _updateInput);
-			HandleResultCode(resultCode, "SetKernelArg:_updateInput");
+			_computeManager.InitBuffer(BufferName.GraftingAddresses, graftingAddressesArray);
+			_computeManager.SetArg(KernelName.Graft, "graftingAddresses", BufferName.BaseBlocks);
 
-			resultCode = commandQueue.EnqueueNDRangeKernel(graft, 1, null, new[] { (nuint)graftingArray.Length }, null, waitEvents, out _);
-			HandleResultCode(resultCode, "EnqueueNDRangeKernel:graft");
-			resultCode = commandQueue.Flush();
-			HandleResultCode(resultCode, "Flush");
+			_computeManager.InitBuffer(BufferName.HoldingAddresses, new uint[_updateInput.GraftSize]);
+			_computeManager.SetArg(KernelName.Graft, "holdingAddresses", BufferName.BaseBlocks);
+
+			_computeManager.InitBuffer(BufferName.AddressPosition, new uint[] { 0 });
+			_computeManager.SetArg(KernelName.Graft, "addressPosition", BufferName.BaseBlocks);
+			_computeManager.SetArg(KernelName.Graft, "inputData", _updateInput);
+
+			var waitEvents = new List<OpenTK.Compute.OpenCL.CLEvent>();
+			waitEvents.Add(_computeManager.WriteBuffer(BufferName.DereferenceQueue, new ulong[blockCount], null));
+			waitEvents.Add(_computeManager.WriteBuffer(BufferName.DereferenceRemaining, new uint[] { 0 }, null));
+			waitEvents.Add(_computeManager.WriteBuffer(BufferName.Semaphor, new int[] { 0 }, null));
+
+			_computeManager.Enqueue(KernelName.Graft, new[] { (nuint)graftingArray.Length }, waitEvents.ToArray());
+			_computeManager.Flush();
 		}
 
 		private void runTrace()
 		{
-			var resultCode = commandQueue.EnqueueAcquireGLObjects(new[] { clRenderbuffer.Handle }, null, out OpenTK.Compute.OpenCL.CLEvent acquireImage);
-			HandleResultCode(resultCode, "EnqueueAcquireGLObjects");
+			var renderBuffer = _computeManager.AcquireRenderbuffer();
+			_computeManager.SetArg(KernelName.TraceVoxel, "outputImage", renderBuffer.buffer);
+			_computeManager.SetArg(KernelName.TraceVoxel, "_input", _traceInput);
 
-
-			resultCode = traceVoxel.SetKernelArg(5, clRenderbuffer);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:clRenderBuffer");
-			resultCode = traceVoxel.SetKernelArg(6, _traceInput);
-			HandleResultCode(resultCode, "SetKernelArg:traceVoxel:_traceInput");
-
-			resultCode = commandQueue.EnqueueNDRangeKernel(traceVoxel, 2, null, new[] { (nuint)Size.X, (nuint)Size.Y }, null, new[] { acquireImage }, out OpenTK.Compute.OpenCL.CLEvent kernelRun);
-			HandleResultCode(resultCode, "EnqueueNDRangeKernel:traceVoxel");
-
-			// Release 
-			resultCode = commandQueue.EnqueueReleaseGLObjects(new[] { clRenderbuffer.Handle }, new[] { kernelRun }, out _);
-			HandleResultCode(resultCode, "EnqueueReleaseGLObjects");
-			resultCode = commandQueue.Flush();
-			HandleResultCode(resultCode, "Flush");
+			var kernelRun = _computeManager.Enqueue(KernelName.TraceVoxel, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { renderBuffer.waitEvent });
+			_computeManager.ReleaseRenderbuffer(new[] { kernelRun });
+			_computeManager.Flush();
 		}
 
 		public void UpdatePruning(Pruning pruningInput, BlockData? pruningBlockDataInput, Location? pruningAddressInput)
@@ -711,7 +450,6 @@ namespace SvoTracer.Window
 		{
 			base.OnResize(e);
 			initRenderBuffer();
-			traceVoxel.SetKernelArg(5, clRenderbuffer);
 		}
 		#endregion
 

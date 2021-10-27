@@ -1323,8 +1323,8 @@ __kernel void traceMesh() {}
 
 __kernel void traceParticle() {}
 
-__kernel void spawnRays() {}
-
 __kernel void traceLight() {}
+
+__kernel void spawnRays() {}
 
 __kernel void resolveImage() {}

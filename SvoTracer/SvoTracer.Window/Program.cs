@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using OpenTK.Graphics;
+using OpenTK.Windowing.GraphicsLibraryFramework;
+using SvoTracer.Kernel;
+
 namespace SvoTracer.Window
 {
 	class Program
