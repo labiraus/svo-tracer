@@ -1,5 +1,5 @@
 ﻿using OpenTK.Mathematics;
-using SvoTracer.Domain.Model;
+using SvoTracer.Domain.Models;
 using System;
 
 namespace SvoTracer.Kernel

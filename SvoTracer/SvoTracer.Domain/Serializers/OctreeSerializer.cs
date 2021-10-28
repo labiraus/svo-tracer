@@ -1,24 +1,22 @@
-﻿using System;
+﻿using SvoTracer.Domain.Models;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
 
-namespace SvoTracer.Domain.Model
+namespace SvoTracer.Domain.Serializers
 {
-	public struct Octree
+	public static class OctreeSerializer
 	{
-		public byte N { get; set; }
-		public uint BlockCount { get; set; }
-		public ushort[] BaseBlocks { get; set; }
-		public Block[] Blocks { get; set; }
-		public void Serialize(BinaryWriter writer)
+		public static void Serialize(this Octree octree, BinaryWriter writer)
 		{
-			writer.Write(N);
-			writer.Write(BlockCount);
-			foreach (var baseBlock in BaseBlocks)
+			writer.Write(octree.N);
+			writer.Write(octree.BlockCount);
+			foreach (var baseBlock in octree.BaseBlocks)
 				writer.Write(baseBlock);
-			foreach (var block in Blocks)
+			foreach (var block in octree.Blocks)
 				block.Serialize(writer);
 		}
 
@@ -41,7 +39,7 @@ namespace SvoTracer.Domain.Model
 
 			var blocks = reader.ReadBytes(Block.Size * (int)blockCount);
 			for (int i = 0; i < tree.BlockCount; i++)
-				tree.Blocks[i] = Block.Deserialize(blocks[(i * Block.Size)..((i + 1) * Block.Size)]);
+				tree.Blocks[i] = BlockSerializer.Deserialize(blocks[(i * Block.Size)..((i + 1) * Block.Size)]);
 
 			return tree;
 		}

@@ -4,10 +4,8 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace SvoTracer.Domain.Model
+namespace SvoTracer.Domain.Models
 {
-	[Serializable]
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct Location : IEquatable<Location>
 	{
 		public ulong X { get; set; }
@@ -71,8 +69,6 @@ namespace SvoTracer.Domain.Model
                 }
             }
         }
-
-        public static readonly int SizeInBytes = Unsafe.SizeOf<Location>();
 
         /// <inheritdoc />
         public override string ToString()

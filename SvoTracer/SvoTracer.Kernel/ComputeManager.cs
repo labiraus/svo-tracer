@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace SvoTracer.Kernel
 {
-	public class ComputeManager
+	public class ComputeManager : IDisposable
 	{
 		private readonly CLContext _context;
 		private readonly CLCommandQueue _commandQueue;
@@ -39,7 +39,7 @@ namespace SvoTracer.Kernel
 			HandleResultCode(resultCode, "CreateFromGLRenderbuffer");
 		}
 
-		public (CLImage buffer, CLEvent waitEvent) AcquireRenderbuffer(CLEvent[] waitEvents = null)
+		public (CLImage renderbuffer, CLEvent waitEvent) AcquireRenderbuffer(CLEvent[] waitEvents = null)
 		{
 			var resultCode = _commandQueue.EnqueueAcquireGLObjects(new[] { renderbuffer.Handle }, waitEvents, out CLEvent acquireImage);
 			HandleResultCode(resultCode, "EnqueueAcquireGLObjects");
@@ -77,6 +77,13 @@ namespace SvoTracer.Kernel
 		}
 
 		public void SetArg<T>(KernelName kernelName, string paramName, T argument) where T : unmanaged
+		{
+			var kernel = getKernel(kernelName);
+			var resultCode = kernel.SetKernelArg(_argumentPositions[kernelName][paramName], argument);
+			ComputeManager.HandleResultCode(resultCode, "EnqueueNDRangeKernel");
+		}
+
+		public void SetArg<T>(KernelName kernelName, string paramName, T[] argument) where T : unmanaged
 		{
 			var kernel = getKernel(kernelName);
 			var resultCode = kernel.SetKernelArg(_argumentPositions[kernelName][paramName], argument);
@@ -187,6 +194,18 @@ namespace SvoTracer.Kernel
 				output[paramList[i]] = i;
 			}
 			return output;
+		}
+
+		public void Dispose()
+		{
+			foreach (var buffer in _buffers.Values)
+				buffer.ReleaseMemoryObject();
+			renderbuffer.ReleaseMemoryObject();
+			foreach (var kernel in _kernels.Values)
+				kernel.ReleaseKernel();
+			_program.ReleaseProgram();
+			_commandQueue.ReleaseCommandQueue();
+			_context.ReleaseContext();
 		}
 	}
 }

@@ -1,4 +1,5 @@
-﻿using SvoTracer.Domain.Model;
+﻿using SvoTracer.Domain.Models;
+using SvoTracer.Domain.Serializers;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -31,7 +32,7 @@ namespace SvoTracer.Domain
 		{
 			using FileStream fs = new FileStream($"{Environment.CurrentDirectory}\\trees\\{fileName}.oct", FileMode.Open);
 			using BinaryReader br = new BinaryReader(fs);
-			var tree = Octree.Deserialize(br);
+			var tree = OctreeSerializer.Deserialize(br);
 
 			br.Close();
 			fs.Close();

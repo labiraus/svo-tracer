@@ -2,7 +2,7 @@
 using System.Drawing;
 using System.Linq;
 using System.Numerics;
-using SvoTracer.Domain.Model;
+using SvoTracer.Domain.Models;
 
 namespace SvoTracer.Domain
 {

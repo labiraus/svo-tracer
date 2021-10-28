@@ -1,8 +1,7 @@
 ﻿using SvoTracer.Kernel;
 using SvoTracer.Domain;
-using SvoTracer.Domain.Model;
+using SvoTracer.Domain.Models;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using OpenTK.Windowing.Desktop;
@@ -12,37 +11,22 @@ using System.Diagnostics;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Graphics;
 using OpenTK.Windowing.Common;
-using System.Text;
 using System.Runtime.InteropServices;
-using System.IO;
+using SvoTracer.Domain.Serializers;
 
 namespace SvoTracer.Window
 {
 	class MainWindow : GameWindow
 	{
 		#region //Local Variables
-		private ushort tick = 1;
 		private uint parentMaxSize = 6000;
 		private uint blockCount = 0;
 		private bool initialized = false;
-		MouseState previousMouseState;
-		private uint[] parentSize = new uint[] { 0 };
-		private TraceInputData _traceInput;
-		private UpdateInputData _updateInput;
 
-		private readonly object _pruningBufferLock = new();
-		private List<Pruning> pruning = new();
-		private List<BlockData> pruningBlockData = new();
-		private List<Location> pruningAddresses = new();
+		private readonly ComputeManager _computeManager;
+		private readonly WorldManager _worldManager = new();
+		private readonly StateManager _stateManager;
 
-		private readonly object _graftingBufferLock = new();
-		private List<Grafting> grafting = new();
-		private List<Block> graftingBlocks = new();
-		private List<Location> graftingAddresses = new();
-
-		private readonly object _resizeLock = new();
-
-		private ComputeManager _computeManager;
 		private RenderbufferHandle glRenderbuffer = RenderbufferHandle.Zero;
 		private FramebufferHandle framebuffer = FramebufferHandle.Zero;
 		#endregion
@@ -56,6 +40,7 @@ namespace SvoTracer.Window
 			})
 		{
 			_computeManager = buildComputeManager();
+			_stateManager = new(MouseState);
 		}
 
 		unsafe private ComputeManager buildComputeManager()
@@ -78,9 +63,23 @@ namespace SvoTracer.Window
 				// Set up the buffers
 				framebuffer = GL.CreateFramebuffer();
 				GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
-
 				initRenderBuffer();
-				setupKernels();
+
+				var builder = new CubeBuilder(
+					new Vector3(0.3f, 0.3f, 0.3f),
+					new Vector3(0.3f, 0.3f, 0.6f),
+					new Vector3(0.3f, 0.6f, 0.6f),
+					new Vector3(0.3f, 0.6f, 0.3f),
+					new Vector3(0.6f, 0.3f, 0.3f),
+					new Vector3(0.6f, 0.3f, 0.6f),
+					new Vector3(0.6f, 0.6f, 0.6f),
+					new Vector3(0.6f, 0.6f, 0.3f));
+				if (!builder.TreeExists("test"))
+				{
+					builder.SaveTree("test", 5, 7, uint.MaxValue / 64);
+				}
+				setupKernels(TreeBuilder.LoadTree("test"));
+
 				initialized = true;
 			}
 			catch (Exception ex)
@@ -96,81 +95,40 @@ namespace SvoTracer.Window
 			}
 		}
 
-		unsafe private void initRenderBuffer()
+		private void initRenderBuffer()
 		{
-			lock (_resizeLock)
-			{
-				// Remove buffers if they already exist
-				if (glRenderbuffer != RenderbufferHandle.Zero)
-					fixed (BufferHandle* bufferArray = new[] { new BufferHandle(glRenderbuffer.Handle) })
-						GL.DeleteBuffers(1, bufferArray);
+			// Remove buffers if they already exist
+			if (glRenderbuffer != RenderbufferHandle.Zero)
+				GL.DeleteRenderbuffer(glRenderbuffer);
 
-				// Initializes the render buffer
-				glRenderbuffer = GL.CreateRenderbuffer();
-				GL.NamedRenderbufferStorage(glRenderbuffer, InternalFormat.Rgba32f, Size.X, Size.Y);
-				GL.NamedFramebufferRenderbuffer(framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, glRenderbuffer);
-				var err = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
-				if (err != FramebufferStatus.FramebufferComplete)
-					Console.WriteLine(err);
-				GL.Flush();
-				_computeManager.InitRenderbuffer((uint)glRenderbuffer.Handle);
-			}
+			// Initializes the render buffer
+			glRenderbuffer = GL.CreateRenderbuffer();
+			GL.NamedRenderbufferStorage(glRenderbuffer, InternalFormat.Rgba32f, Size.X, Size.Y);
+			GL.NamedFramebufferRenderbuffer(framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, glRenderbuffer);
+			var err = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+			if (err != FramebufferStatus.FramebufferComplete)
+				throw new Exception($"CheckFramebufferStatus returned: {err}");
+			GL.Flush();
+
+			// Setup CL renderbuffer
+			_computeManager.InitRenderbuffer((uint)glRenderbuffer.Handle);
 		}
 
 		#endregion
 
 		#region //Data Processing
 
-		private void setupKernels()
+		private void setupKernels(Octree octree)
 		{
-			var builder = new CubeBuilder(
-				new Vector3(0.3f, 0.3f, 0.3f),
-				new Vector3(0.3f, 0.3f, 0.6f),
-				new Vector3(0.3f, 0.6f, 0.6f),
-				new Vector3(0.3f, 0.6f, 0.3f),
-				new Vector3(0.6f, 0.3f, 0.3f),
-				new Vector3(0.6f, 0.3f, 0.6f),
-				new Vector3(0.6f, 0.6f, 0.6f),
-				new Vector3(0.6f, 0.6f, 0.3f));
-			//new Vector3(0.5f, 0.5f, 0.2f),
-			//new Vector3(0.6f, 0.3f, 0.4f),
-			//new Vector3(0.6f, 0.7f, 0.4f),
-			//new Vector3(0.7f, 0.5f, 0.4f),
-			//new Vector3(0.4f, 0.3f, 0.6f),
-			//new Vector3(0.4f, 0.7f, 0.6f),
-			//new Vector3(0.3f, 0.5f, 0.6f),
-			//new Vector3(0.5f, 0.5f, 0.8f));
-			if (!builder.TreeExists("test"))
-			{
-				builder.SaveTree("test", 5, 7, uint.MaxValue / 64);
-			}
-			var octree = TreeBuilder.LoadTree("test");
+			_stateManager.TraceInput.N = octree.N;
+			_stateManager.UpdateInput.N = octree.N;
+			_stateManager.UpdateInput.MemorySize = octree.BlockCount;
 			blockCount = octree.BlockCount;
-
-			_traceInput = new TraceInputData(
-				new Vector3(0.5f, 0.5f, -2f),
-				new Vector3(0, (float)Math.PI / 2f, 0),
-				new Vector2((float)Math.PI / 4f, (float)Math.PI / 4f),
-				new Vector2(0, 0.169f),
-				base.Bounds.Size.X,
-				base.Bounds.Size.Y,
-				200,
-				octree.N,
-				0,
-				6000);
-
-			_updateInput = new UpdateInputData
-			{
-				N = octree.N,
-				MaxChildRequestId = 6000,
-				MemorySize = octree.BlockCount,
-				Offset = uint.MaxValue / 4,
-			};
 			parentMaxSize = 6000;
 
 			var usage = new Usage[octree.BlockCount >> 3];
-			var baseStart = TreeBuilder.PowSum((byte)(_traceInput.N - 1));
-			var range = TreeBuilder.PowSum(_traceInput.N) << 3;
+			var baseStart = TreeBuilder.PowSum((byte)(_stateManager.TraceInput.N - 1));
+			var range = TreeBuilder.PowSum(_stateManager.TraceInput.N) << 3;
 			//This iterates over the N+1 level
 			for (int i = 0; i < range; i++)
 			{
@@ -180,19 +138,14 @@ namespace SvoTracer.Window
 				usage[i].Parent = uint.MaxValue;
 			}
 
-			bool[] parentResidency = new bool[parentMaxSize];
-			Parent[] parents = new Parent[parentMaxSize];
-			var ms = new MemoryStream();
-			var writer = new BinaryWriter(ms);
-			foreach (var block in octree.Blocks) block.Serialize(writer);
 			_computeManager.InitBuffer(BufferName.BaseBlocks, octree.BaseBlocks);
-			_computeManager.InitBuffer(BufferName.Blocks, ms.ToArray());
-			_computeManager.InitBuffer(BufferName.Usage, new Usage[octree.BlockCount >> 3]);
+			_computeManager.InitBuffer(BufferName.Blocks, octree.Blocks.Serialize());
+			_computeManager.InitBuffer(BufferName.Usage, usage.Serialize());
 			_computeManager.InitBuffer(BufferName.ChildRequestId, new uint[1]);
-			_computeManager.InitBuffer(BufferName.ChildRequests, new ChildRequest[_traceInput.MaxChildRequestId]);
+			_computeManager.InitBuffer(BufferName.ChildRequests, new byte[_stateManager.TraceInput.MaxChildRequestId * ChildRequest.Size]);
 			_computeManager.InitBuffer(BufferName.ParentSize, new uint[1]);
-			_computeManager.InitBuffer(BufferName.ParentResidency, parentResidency);
-			_computeManager.InitBuffer(BufferName.Parents, parents);
+			_computeManager.InitBuffer(BufferName.ParentResidency, new bool[parentMaxSize]);
+			_computeManager.InitBuffer(BufferName.Parents, new byte[parentMaxSize * Parent.Size]);
 			_computeManager.InitBuffer(BufferName.DereferenceQueue, new ulong[octree.BlockCount]);
 			_computeManager.InitBuffer(BufferName.DereferenceRemaining, new uint[1]);
 			_computeManager.InitBuffer(BufferName.Semaphor, new uint[1]);
@@ -225,272 +178,132 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.TraceVoxel, "usage", BufferName.Usage);
 			_computeManager.SetArg(KernelName.TraceVoxel, "childRequestId", BufferName.ChildRequestId);
 			_computeManager.SetArg(KernelName.TraceVoxel, "childRequests", BufferName.ChildRequests);
-
-			this.KeyDown += MainWindow_KeyDown;
-			this.KeyUp += MainWindow_KeyUp;
-			this.MouseMove += MainWindow_MouseMove;
-
-			previousMouseState = MouseState;
 		}
 
 		private void runKernels()
 		{
-			lock (_resizeLock)
-			{
-				_traceInput.ScreenSize = Size;
-				var fov = _traceInput.FoV;
-				fov[0] = (float)Size.X / (float)Size.Y * (float)Math.PI / 4.0f;
-				_traceInput.FoV = fov;
-				_traceInput.Tick = tick;
-				_updateInput.Tick = tick;
-				//Flush child request buffer
-				_computeManager.WriteBuffer(BufferName.ChildRequestId, new uint[] { 0 });
-
-				runPrune();
-				runGraft();
-				runTrace();
-			}
+			runPrune();
+			runGraft();
+			runTrace();
 		}
 
 		private void runPrune()
 		{
-			var pruningArray = Array.Empty<Pruning>();
-			var pruningBlockDataArray = Array.Empty<BlockData>();
-			var pruningAddressesArray = Array.Empty<Location>();
+			var pruningData = _worldManager.GetPruningData();
+			if (pruningData == null) return;
 
-			lock (_pruningBufferLock)
-			{
-				if (pruning.Count == 0) return;
-
-				pruningArray = pruning.ToArray();
-				pruningBlockDataArray = pruningBlockData.ToArray();
-				pruningAddressesArray = pruningAddresses.ToArray();
-
-				pruning = new List<Pruning>();
-				pruningBlockData = new List<BlockData>();
-				pruningAddresses = new List<Location>();
-			}
-
-			_computeManager.InitBuffer(BufferName.Pruning, pruningArray);
+			_computeManager.InitBuffer(BufferName.Pruning, pruningData.Pruning.Serialize());
 			_computeManager.SetArg(KernelName.Prune, "pruning", BufferName.Pruning);
 
-			_computeManager.InitBuffer(BufferName.PruningBlockData, pruningBlockDataArray);
+			_computeManager.InitBuffer(BufferName.PruningBlockData, pruningData.PruningBlockData.Serialize());
 			_computeManager.SetArg(KernelName.Prune, "pruningBlockData", BufferName.BaseBlocks);
 
-			_computeManager.InitBuffer(BufferName.PruningAddresses, pruningAddressesArray);
+			_computeManager.InitBuffer(BufferName.PruningAddresses, pruningData.PruningAddresses.Serialize());
 			_computeManager.SetArg(KernelName.Prune, "pruningAddresses", BufferName.BaseBlocks);
-			_computeManager.SetArg(KernelName.Prune, "inputData", _updateInput);
+			_computeManager.SetArg(KernelName.Prune, "inputData", _stateManager.UpdateInput.Serialize());
 
-			var waitEvents = new List<OpenTK.Compute.OpenCL.CLEvent>();
-			waitEvents.Add(_computeManager.WriteBuffer(BufferName.DereferenceQueue, new ulong[blockCount], null));
-			waitEvents.Add(_computeManager.WriteBuffer(BufferName.DereferenceRemaining, new uint[] { 0 }, null));
-			waitEvents.Add(_computeManager.WriteBuffer(BufferName.Semaphor, new int[] { 0 }, null));
+			var waitEvents = new[]{
+				_computeManager.WriteBuffer(BufferName.DereferenceQueue, new ulong[blockCount], null),
+				_computeManager.WriteBuffer(BufferName.DereferenceRemaining, new uint[] { 0 }, null),
+				_computeManager.WriteBuffer(BufferName.Semaphor, new int[] { 0 }, null)
+			};
 
-			_computeManager.Enqueue(KernelName.Prune, new[] { (nuint)pruningArray.Length }, waitEvents.ToArray());
+			_computeManager.Enqueue(KernelName.Prune, new[] { (nuint)pruningData.Pruning.Length }, waitEvents);
 			_computeManager.Flush();
 		}
 
 		private void runGraft()
 		{
-			var graftingArray = Array.Empty<Grafting>();
-			var graftingBlocksArray = Array.Empty<Block>();
-			var graftingAddressesArray = Array.Empty<Location>();
+			var graftingData = _worldManager.GetGraftingData();
+			if (graftingData == null) return;
 
-			lock (_graftingBufferLock)
-			{
-				if (grafting.Count == 0) return;
-
-				graftingArray = grafting.ToArray();
-				graftingBlocksArray = graftingBlocks.ToArray();
-				graftingAddressesArray = graftingAddresses.ToArray();
-
-				grafting = new List<Grafting>();
-				graftingBlocks = new List<Block>();
-				graftingAddresses = new List<Location>();
-			}
-
-			_updateInput.GraftSize = (uint)graftingBlocksArray.Count();
-			_computeManager.InitBuffer(BufferName.Grafting, graftingArray);
+			_stateManager.UpdateInput.GraftSize = (uint)graftingData.GraftingBlocks.Count();
+			_computeManager.InitBuffer(BufferName.Grafting, graftingData.Grafting.Serialize());
 			_computeManager.SetArg(KernelName.Graft, "grafting", BufferName.Pruning);
 
-			_computeManager.InitBuffer(BufferName.GraftingBlocks, graftingBlocksArray);
+			_computeManager.InitBuffer(BufferName.GraftingBlocks, graftingData.GraftingBlocks.Serialize());
 			_computeManager.SetArg(KernelName.Graft, "graftingBlocks", BufferName.BaseBlocks);
 
-			_computeManager.InitBuffer(BufferName.GraftingAddresses, graftingAddressesArray);
+			_computeManager.InitBuffer(BufferName.GraftingAddresses, graftingData.GraftingAddresses.Serialize());
 			_computeManager.SetArg(KernelName.Graft, "graftingAddresses", BufferName.BaseBlocks);
 
-			_computeManager.InitBuffer(BufferName.HoldingAddresses, new uint[_updateInput.GraftSize]);
+			_computeManager.InitBuffer(BufferName.HoldingAddresses, new uint[_stateManager.UpdateInput.GraftSize]);
 			_computeManager.SetArg(KernelName.Graft, "holdingAddresses", BufferName.BaseBlocks);
 
 			_computeManager.InitBuffer(BufferName.AddressPosition, new uint[] { 0 });
 			_computeManager.SetArg(KernelName.Graft, "addressPosition", BufferName.BaseBlocks);
-			_computeManager.SetArg(KernelName.Graft, "inputData", _updateInput);
+			_computeManager.SetArg(KernelName.Graft, "inputData", _stateManager.UpdateInput.Serialize());
 
-			var waitEvents = new List<OpenTK.Compute.OpenCL.CLEvent>();
-			waitEvents.Add(_computeManager.WriteBuffer(BufferName.DereferenceQueue, new ulong[blockCount], null));
-			waitEvents.Add(_computeManager.WriteBuffer(BufferName.DereferenceRemaining, new uint[] { 0 }, null));
-			waitEvents.Add(_computeManager.WriteBuffer(BufferName.Semaphor, new int[] { 0 }, null));
+			var waitEvents = new[]{
+				_computeManager.WriteBuffer(BufferName.DereferenceQueue, new ulong[blockCount], null),
+				_computeManager.WriteBuffer(BufferName.DereferenceRemaining, new uint[] { 0 }, null),
+				_computeManager.WriteBuffer(BufferName.Semaphor, new int[] { 0 }, null)
+			};
 
-			_computeManager.Enqueue(KernelName.Graft, new[] { (nuint)graftingArray.Length }, waitEvents.ToArray());
+			_computeManager.Enqueue(KernelName.Graft, new[] { (nuint)graftingData.Grafting.Length }, waitEvents);
 			_computeManager.Flush();
 		}
 
 		private void runTrace()
 		{
-			var renderBuffer = _computeManager.AcquireRenderbuffer();
-			_computeManager.SetArg(KernelName.TraceVoxel, "outputImage", renderBuffer.buffer);
-			_computeManager.SetArg(KernelName.TraceVoxel, "_input", _traceInput);
+			//Flush child request buffer
+			_computeManager.WriteBuffer(BufferName.ChildRequestId, new uint[] { 0 });
+			var (renderbuffer, waitEvent) = _computeManager.AcquireRenderbuffer();
+			_computeManager.SetArg(KernelName.TraceVoxel, "outputImage", renderbuffer);
+			_computeManager.SetArg(KernelName.TraceVoxel, "_input", _stateManager.TraceInput.Serialize());
 
-			var kernelRun = _computeManager.Enqueue(KernelName.TraceVoxel, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { renderBuffer.waitEvent });
+			var kernelRun = _computeManager.Enqueue(KernelName.TraceVoxel, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { waitEvent });
 			_computeManager.ReleaseRenderbuffer(new[] { kernelRun });
 			_computeManager.Flush();
 		}
-
-		public void UpdatePruning(Pruning pruningInput, BlockData? pruningBlockDataInput, Location? pruningAddressInput)
-		{
-			lock (_pruningBufferLock)
-			{
-				if (pruningBlockDataInput != null)
-				{
-					pruningInput.ColourAddress = (uint)pruningBlockData.Count;
-					pruningBlockData.Add(pruningBlockDataInput.Value);
-				}
-				if (pruningAddressInput != null)
-				{
-					pruningInput.Address = (uint)pruningAddresses.Count;
-					pruningAddresses.Add(pruningAddressInput.Value);
-				}
-				pruning.Add(pruningInput);
-			}
-		}
-
-		public void UpdateGrafting(Grafting graftingInput, List<Block> graftingBlockInput, Location? graftingAddressInput)
-		{
-			lock (_graftingBufferLock)
-			{
-				graftingInput.GraftDataAddress = (uint)graftingBlocks.Count;
-				graftingInput.GraftTotalSize = (uint)graftingBlockInput.Count;
-				for (int i = 0; i < graftingBlockInput.Count; i++)
-				{
-					var graftingBlock = graftingBlockInput[i];
-					graftingBlock.Child += graftingInput.GraftDataAddress;
-					graftingBlocks.Add(graftingBlock);
-				}
-				if (graftingAddressInput != null)
-				{
-					graftingInput.GraftAddress = (uint)graftingAddresses.Count;
-					graftingAddresses.Add(graftingAddressInput.Value);
-				}
-				grafting.Add(graftingInput);
-			}
-		}
 		#endregion
 
-		#region //Input
-		private void MainWindow_MouseMove(MouseMoveEventArgs e)
-		{
-		}
-
-		private void MainWindow_KeyUp(KeyboardKeyEventArgs e)
-		{
-		}
-
-		private void MainWindow_KeyDown(KeyboardKeyEventArgs e)
-		{
-		}
-
-		private void readInput()
-		{
-			if (base.MouseState.IsButtonDown(MouseButton.Left) && previousMouseState.IsButtonDown(MouseButton.Left))
-			{
-				var facing = _traceInput.Facing;
-				facing.X -= (base.MouseState.X - previousMouseState.X) / 1000.0f;
-				facing.Y += (base.MouseState.Y - previousMouseState.Y) / 1000.0f;
-
-				if (facing.Y > Math.PI)
-					facing.Y = (float)Math.PI;
-				else if (facing.Y < -Math.PI)
-					facing.Y = -(float)Math.PI;
-				if (facing.X > Math.PI)
-					facing.X -= (float)Math.PI * 2;
-				else if (facing.X < -Math.PI)
-					facing.X += (float)Math.PI * 2;
-				_traceInput.Facing = facing;
-			}
-			previousMouseState = base.MouseState;
-			var origin = _traceInput.Origin;
-			if (base.KeyboardState.IsKeyDown(Keys.Space))
-				origin.Z -= 0.005f;
-			if (base.KeyboardState.IsKeyDown(Keys.C))
-				origin.Z += 0.005f;
-			if (base.KeyboardState.IsKeyDown(Keys.W) && !base.KeyboardState.IsKeyDown(Keys.S))
-				origin.Y -= 0.005f;
-			if (base.KeyboardState.IsKeyDown(Keys.S) && !base.KeyboardState.IsKeyDown(Keys.W))
-				origin.Y += 0.005f;
-			if (base.KeyboardState.IsKeyDown(Keys.D) && !base.KeyboardState.IsKeyDown(Keys.A))
-				origin.X -= 0.005f;
-			if (base.KeyboardState.IsKeyDown(Keys.A) && !base.KeyboardState.IsKeyDown(Keys.D))
-				origin.X += 0.005f;
-			_traceInput.Origin = origin;
-		}
-		#endregion
-
-		#region //Change
-		unsafe protected override void OnUnload()
+		protected override void OnUnload()
 		{
 			base.OnUnload();
-			var bufferHandles = new[] { new BufferHandle(framebuffer.Handle) };
-			fixed (BufferHandle* bufferArray = bufferHandles.ToArray())
-			{
-				GL.DeleteBuffers(1, bufferArray);
-			}
+
+			_computeManager.Dispose();
+			GL.DeleteRenderbuffer(glRenderbuffer);
+			GL.DeleteFramebuffer(framebuffer);
 		}
 
 		protected override void OnResize(ResizeEventArgs e)
 		{
 			base.OnResize(e);
-			initRenderBuffer();
-		}
-		#endregion
 
-		#region //Update
+			initRenderBuffer();
+			_stateManager.UpdateScreenSize(Size);
+		}
+
 		protected override void OnUpdateFrame(FrameEventArgs e)
 		{
 			base.OnUpdateFrame(e);
 
 			if (KeyboardState.IsKeyDown(Keys.Escape))
-				base.Close();
+				Close();
 		}
-		#endregion
 
-		#region //Render
 		protected override void OnRenderFrame(FrameEventArgs e)
 		{
+			if (!initialized) return;
 			base.OnRenderFrame(e);
 
-			if (!initialized)
-			{
-				return;
-			}
+			// Update State
+			_stateManager.ReadInput(MouseState, KeyboardState);
+			_stateManager.IncrementTick();
 
+			// Render Scene
 			runKernels();
+
+			// Display Scene
 			GL.Viewport(0, 0, Size.X, Size.Y);
 			GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-
 			GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, FramebufferHandle.Zero);
 			GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
 			GL.BlitFramebuffer(0, 0, Size.X, Size.Y, 0, 0, Size.X, Size.Y, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
 
 			SwapBuffers();
-			if (tick < ushort.MaxValue - 2)
-				tick += 1;
-			else
-				tick = 1;
-
-			readInput();
 		}
-
-		#endregion
 
 		#region //Error
 

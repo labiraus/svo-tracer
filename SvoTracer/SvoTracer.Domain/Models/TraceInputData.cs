@@ -2,17 +2,17 @@
 using System.Runtime.InteropServices;
 using OpenTK.Mathematics;
 
-namespace SvoTracer.Domain.Model
+namespace SvoTracer.Domain.Models
 {
 	[Serializable]
 	[StructLayout(LayoutKind.Sequential, Pack = 1)]
 	public struct TraceInputData
 	{
 		public TraceInputData(
-			System.Numerics.Vector3 origin,
-			System.Numerics.Vector3 facing,
-			System.Numerics.Vector2 foV,
-			System.Numerics.Vector2 doF,
+			Vector3 origin,
+			Vector3 facing,
+			Vector2 foV,
+			Vector2 doF,
 			int screenSizeX,
 			int screenSizeY,
 			byte maxOpacity,
@@ -20,8 +20,8 @@ namespace SvoTracer.Domain.Model
 			ushort tick,
 			uint maxChildRequestId)
 		{
-			Origin = new Vector3(origin.X, origin.Y, origin.Z);
-			Facing = new Vector3(facing.X, facing.Y, facing.Z);
+			Origin = origin;
+			Facing = facing;
 			FoV = new Vector2(foV.X, foV.Y);
 			DoF = new Vector2(doF.X, doF.Y);
 			ScreenSize = new Vector2i(screenSizeX, screenSizeY);

@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using OpenTK.Mathematics;
 
-namespace SvoTracer.Domain.Model
+namespace SvoTracer.Domain.Models
 {
 	[Serializable]
 	[StructLayout(LayoutKind.Sequential, Pack = 1)]

@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 
-namespace SvoTracer.Domain.Model
+namespace SvoTracer.Domain.Models
 {
-    [Serializable]
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct Grafting
     {
         public uint GraftDataAddress { get; set; }

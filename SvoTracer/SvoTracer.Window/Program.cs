@@ -11,7 +11,7 @@ namespace SvoTracer.Window
         [STAThread]
         private static void Main(string[] args)
         {
-            var testRun = new TestRun();
+            //var testRun = new TestRun();
             //testRun.Run();
 
             using (MainWindow win = new MainWindow(1000,1000, "SVO Tracer"))
