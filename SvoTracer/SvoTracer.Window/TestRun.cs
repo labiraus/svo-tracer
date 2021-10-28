@@ -44,7 +44,7 @@ namespace SvoTracer
             {
                 Octree tree;
                 tree = builder.BuildTree(input.N, 11, uint.MaxValue / 64);
-                builder.SaveTree("test", input.N, tree);
+				TreeBuilder.SaveTree("test", tree);
                 return;
                 //tree = builder.LoadTree("test");
                 for (uint i = 0; i < input.ScreenSize.Y; i++)

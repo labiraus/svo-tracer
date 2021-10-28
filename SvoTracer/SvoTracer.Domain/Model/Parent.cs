@@ -4,10 +4,10 @@ using System.Runtime.InteropServices;
 namespace SvoTracer.Domain.Model
 {
     [Serializable]
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct Parent
     {
-        public uint ParentAddress;
-        public uint NextElement;
+        public uint ParentAddress { get; set; }
+        public uint NextElement { get; set; }
     }
 }

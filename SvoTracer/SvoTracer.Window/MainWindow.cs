@@ -14,6 +14,7 @@ using OpenTK.Graphics;
 using OpenTK.Windowing.Common;
 using System.Text;
 using System.Runtime.InteropServices;
+using System.IO;
 
 namespace SvoTracer.Window
 {
@@ -143,7 +144,7 @@ namespace SvoTracer.Window
 			{
 				builder.SaveTree("test", 5, 7, uint.MaxValue / 64);
 			}
-			var octree = builder.LoadTree("test");
+			var octree = TreeBuilder.LoadTree("test");
 			blockCount = octree.BlockCount;
 
 			_traceInput = new TraceInputData(
@@ -162,7 +163,7 @@ namespace SvoTracer.Window
 			{
 				N = octree.N,
 				MaxChildRequestId = 6000,
-				MemorySize = blockCount,
+				MemorySize = octree.BlockCount,
 				Offset = uint.MaxValue / 4,
 			};
 			parentMaxSize = 6000;
@@ -181,9 +182,11 @@ namespace SvoTracer.Window
 
 			bool[] parentResidency = new bool[parentMaxSize];
 			Parent[] parents = new Parent[parentMaxSize];
-
+			var ms = new MemoryStream();
+			var writer = new BinaryWriter(ms);
+			foreach (var block in octree.Blocks) block.Serialize(writer);
 			_computeManager.InitBuffer(BufferName.BaseBlocks, octree.BaseBlocks);
-			_computeManager.InitBuffer(BufferName.Blocks, octree.Blocks);
+			_computeManager.InitBuffer(BufferName.Blocks, ms.ToArray());
 			_computeManager.InitBuffer(BufferName.Usage, new Usage[octree.BlockCount >> 3]);
 			_computeManager.InitBuffer(BufferName.ChildRequestId, new uint[1]);
 			_computeManager.InitBuffer(BufferName.ChildRequests, new ChildRequest[_traceInput.MaxChildRequestId]);
@@ -235,7 +238,9 @@ namespace SvoTracer.Window
 			lock (_resizeLock)
 			{
 				_traceInput.ScreenSize = Size;
-				_traceInput.FoV[0] = (float)Size.X / (float)Size.Y * (float)Math.PI / 4.0f;
+				var fov = _traceInput.FoV;
+				fov[0] = (float)Size.X / (float)Size.Y * (float)Math.PI / 4.0f;
+				_traceInput.FoV = fov;
 				_traceInput.Tick = tick;
 				_updateInput.Tick = tick;
 				//Flush child request buffer
@@ -398,40 +403,35 @@ namespace SvoTracer.Window
 		{
 			if (base.MouseState.IsButtonDown(MouseButton.Left) && previousMouseState.IsButtonDown(MouseButton.Left))
 			{
-				_traceInput.Facing.X -= (base.MouseState.X - previousMouseState.X) / 1000.0f;
-				_traceInput.Facing.Y += (base.MouseState.Y - previousMouseState.Y) / 1000.0f;
+				var facing = _traceInput.Facing;
+				facing.X -= (base.MouseState.X - previousMouseState.X) / 1000.0f;
+				facing.Y += (base.MouseState.Y - previousMouseState.Y) / 1000.0f;
 
-				if (_traceInput.Facing.Y > Math.PI)
-					_traceInput.Facing.Y = (float)Math.PI;
-				else if (_traceInput.Facing.Y < -Math.PI)
-					_traceInput.Facing.Y = -(float)Math.PI;
-				if (_traceInput.Facing.X > Math.PI)
-					_traceInput.Facing.X -= (float)Math.PI * 2;
-				else if (_traceInput.Facing.X < -Math.PI)
-					_traceInput.Facing.X += (float)Math.PI * 2;
+				if (facing.Y > Math.PI)
+					facing.Y = (float)Math.PI;
+				else if (facing.Y < -Math.PI)
+					facing.Y = -(float)Math.PI;
+				if (facing.X > Math.PI)
+					facing.X -= (float)Math.PI * 2;
+				else if (facing.X < -Math.PI)
+					facing.X += (float)Math.PI * 2;
+				_traceInput.Facing = facing;
 			}
 			previousMouseState = base.MouseState;
-
+			var origin = _traceInput.Origin;
 			if (base.KeyboardState.IsKeyDown(Keys.Space))
-				_traceInput.Origin.Z -= 0.005f;
+				origin.Z -= 0.005f;
 			if (base.KeyboardState.IsKeyDown(Keys.C))
-				_traceInput.Origin.Z += 0.005f;
+				origin.Z += 0.005f;
 			if (base.KeyboardState.IsKeyDown(Keys.W) && !base.KeyboardState.IsKeyDown(Keys.S))
-			{
-				_traceInput.Origin.Y -= 0.005f;
-			}
+				origin.Y -= 0.005f;
 			if (base.KeyboardState.IsKeyDown(Keys.S) && !base.KeyboardState.IsKeyDown(Keys.W))
-			{
-				_traceInput.Origin.Y += 0.005f;
-			}
+				origin.Y += 0.005f;
 			if (base.KeyboardState.IsKeyDown(Keys.D) && !base.KeyboardState.IsKeyDown(Keys.A))
-			{
-				_traceInput.Origin.X -= 0.005f;
-			}
+				origin.X -= 0.005f;
 			if (base.KeyboardState.IsKeyDown(Keys.A) && !base.KeyboardState.IsKeyDown(Keys.D))
-			{
-				_traceInput.Origin.X += 0.005f;
-			}
+				origin.X += 0.005f;
+			_traceInput.Origin = origin;
 		}
 		#endregion
 

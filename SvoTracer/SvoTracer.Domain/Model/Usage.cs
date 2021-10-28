@@ -4,10 +4,10 @@ using System.Runtime.InteropServices;
 namespace SvoTracer.Domain.Model
 {
     [Serializable]
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct Usage
     {
-        public ushort Count;
-        public uint Parent;
+        public ushort Count { get; set; }
+        public uint Parent { get; set; }
     }
 }

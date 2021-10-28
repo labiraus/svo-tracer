@@ -7,13 +7,13 @@ using System.Runtime.InteropServices;
 namespace SvoTracer.Domain.Model
 {
 	[Serializable]
-	[StructLayout(LayoutKind.Sequential)]
-	public struct Location : IEquatable<Location>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct Location : IEquatable<Location>
 	{
-		public ulong X;
-		public ulong Y;
-		public ulong Z;
-		public Location(ulong value)
+		public ulong X { get; set; }
+        public ulong Y { get; set; }
+        public ulong Z { get; set; }
+        public Location(ulong value)
 		{
 			X = value;
 			Y = value;
