@@ -16,7 +16,7 @@ namespace SvoTracer.Domain.Serializers
 			var writer = new BinaryWriter(ms);
 			foreach (var usage in usages)
 			{
-				writer.Write(usage.Count);
+				writer.Write(usage.Tick);
 				writer.Write(usage.Parent);
 			}
 			return ms.ToArray();

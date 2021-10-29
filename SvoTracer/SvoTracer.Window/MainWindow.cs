@@ -127,14 +127,14 @@ namespace SvoTracer.Window
 			parentMaxSize = 6000;
 
 			var usage = new Usage[octree.BlockCount >> 3];
-			var baseStart = TreeBuilder.PowSum((byte)(_stateManager.TraceInput.N - 1));
-			var range = TreeBuilder.PowSum(_stateManager.TraceInput.N) << 3;
+			var baseStart = TreeBuilder.PowSum((byte)(octree.N - 1));
+			var range = TreeBuilder.PowSum(octree.N) << 3;
 			//This iterates over the N+1 level
 			for (int i = 0; i < range; i++)
 			{
 				if ((octree.BaseBlocks[baseStart + (i >> 3)] >> ((i & 7) * 2) & 3) != 3)
 					break;
-				usage[i].Count = ushort.MaxValue;
+				usage[i].Tick = ushort.MaxValue;
 				usage[i].Parent = uint.MaxValue;
 			}
 

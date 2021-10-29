@@ -30,43 +30,39 @@ namespace SvoTracer.Window
 
 		public StateManager(MouseState mouseState)
 		{
-			this.previousMouseState = mouseState;
+			previousMouseState = mouseState;
 		}
 
 		public void ReadInput(MouseState mouseState, KeyboardState keyboardState)
 		{
 			if (mouseState.IsButtonDown(MouseButton.Left) && previousMouseState.IsButtonDown(MouseButton.Left))
 			{
-				var facing = TraceInput.Facing;
-				facing.X -= (mouseState.X - previousMouseState.X) / 1000.0f;
-				facing.Y += (mouseState.Y - previousMouseState.Y) / 1000.0f;
+				TraceInput.Facing.X -= (mouseState.X - previousMouseState.X) / 1000.0f;
+				TraceInput.Facing.Y += (mouseState.Y - previousMouseState.Y) / 1000.0f;
 
-				if (facing.Y > Math.PI)
-					facing.Y = (float)Math.PI;
-				else if (facing.Y < -Math.PI)
-					facing.Y = -(float)Math.PI;
-				if (facing.X > Math.PI)
-					facing.X -= (float)Math.PI * 2;
-				else if (facing.X < -Math.PI)
-					facing.X += (float)Math.PI * 2;
-				TraceInput.Facing = facing;
+				if (TraceInput.Facing.Y > Math.PI)
+					TraceInput.Facing.Y = (float)Math.PI;
+				else if (TraceInput.Facing.Y < -Math.PI)
+					TraceInput.Facing.Y = -(float)Math.PI;
+				if (TraceInput.Facing.X > Math.PI)
+					TraceInput.Facing.X -= (float)Math.PI * 2;
+				else if (TraceInput.Facing.X < -Math.PI)
+					TraceInput.Facing.X += (float)Math.PI * 2;
 			}
 
 			previousMouseState = mouseState;
-			var origin = TraceInput.Origin;
 			if (keyboardState.IsKeyDown(Keys.Space))
-				origin.Z -= 0.005f;
+				TraceInput.Origin.Z -= 0.005f;
 			if (keyboardState.IsKeyDown(Keys.C))
-				origin.Z += 0.005f;
+				TraceInput.Origin.Z += 0.005f;
 			if (keyboardState.IsKeyDown(Keys.W) && !keyboardState.IsKeyDown(Keys.S))
-				origin.Y -= 0.005f;
+				TraceInput.Origin.Y -= 0.005f;
 			if (keyboardState.IsKeyDown(Keys.S) && !keyboardState.IsKeyDown(Keys.W))
-				origin.Y += 0.005f;
+				TraceInput.Origin.Y += 0.005f;
 			if (keyboardState.IsKeyDown(Keys.D) && !keyboardState.IsKeyDown(Keys.A))
-				origin.X -= 0.005f;
+				TraceInput.Origin.X -= 0.005f;
 			if (keyboardState.IsKeyDown(Keys.A) && !keyboardState.IsKeyDown(Keys.D))
-				origin.X += 0.005f;
-			TraceInput.Origin = origin;
+				TraceInput.Origin.X += 0.005f;
 		}
 
 		public void UpdateScreenSize(Vector2i size)

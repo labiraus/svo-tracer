@@ -6,9 +6,9 @@ namespace SvoTracer.Domain.Models
 {
 	public struct Block
 	{
-		public uint Child { get; set; }
-		public ushort Chunk { get; set; }
-		public BlockData Data { get; set; }
+		public uint Child;
+		public ushort Chunk;
+		public BlockData Data;
 
 		public const int Size = 16;
 	}

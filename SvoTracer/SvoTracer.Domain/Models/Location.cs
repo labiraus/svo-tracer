@@ -8,9 +8,9 @@ namespace SvoTracer.Domain.Models
 {
     public struct Location : IEquatable<Location>
 	{
-		public ulong X { get; set; }
-        public ulong Y { get; set; }
-        public ulong Z { get; set; }
+		public ulong X;
+        public ulong Y;
+        public ulong Z;
         public Location(ulong value)
 		{
 			X = value;

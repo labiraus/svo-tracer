@@ -4,34 +4,37 @@ using OpenTK.Mathematics;
 
 namespace SvoTracer.Domain.Models
 {
-	[Serializable]
-	[StructLayout(LayoutKind.Sequential, Pack = 1)]
+	/// <summary>
+	/// In Kernel object only
+	/// </summary>
 	public struct WorkingData
 	{
 		//Current location
-		public Location Location { get; set; }
-		public Vector3 Incidence { get; set; }
+		public Location Location;
 		//Origin Position
-		public Vector3 Origin { get; set; }
+		public Vector3 Origin;
 		//Vector direction
-		public Vector3 Direction { get; set; }
+		public Vector3 Direction;
 		//Inverse vector direction
-		public Vector3 InvDirection { get; set; }
+		public Vector3 InvDirection;
 		//Depth of field made up of focal depth(the angle of the forced depth) and focal point(how deep the minimum is)
-		public Vector2 DoF { get; set; }
-		public Vector2i Coord { get; set; }
-		public float PixelFoV { get; set; }
+		public Vector2 DoF;
+		public Vector2i Coord;
+		public Vector2i ScreenSize;
+		public float PixelFoV;
 		//Maximum Opacity
-		public byte MaxOpacity { get; set; }
-		public byte[] Colour { get; set; }
-		public byte Opacity { get; set; }
+		public byte MaxOpacity;
+		public float ColourR;
+		public float ColourB;
+		public float ColourG;
+		public float Opacity;
 		//Depth of inviolate memory(Specific to voxels)
-		public byte N { get; set; }
+		public byte N;
 		//Signs of the vector direction
-		public bool DirectionSignX { get; set; }
-		public bool DirectionSignY { get; set; }
-		public bool DirectionSignZ { get; set; }
-		public ushort Tick { get; set; }
-		public uint MaxChildRequestId { get; set; }
+		public bool DirectionSignX;
+		public bool DirectionSignY;
+		public bool DirectionSignZ;
+		public ushort Tick;
+		public uint MaxChildRequestId;
 	}
 }

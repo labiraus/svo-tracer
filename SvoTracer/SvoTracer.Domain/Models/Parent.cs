@@ -5,8 +5,8 @@ namespace SvoTracer.Domain.Models
 {
     public struct Parent
     {
-        public uint ParentAddress { get; set; }
-        public uint NextElement { get; set; }
+        public uint ParentAddress;
+        public uint NextElement;
         public const int Size = 8;
     }
 }

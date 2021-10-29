@@ -4,8 +4,6 @@ using OpenTK.Mathematics;
 
 namespace SvoTracer.Domain.Models
 {
-	[Serializable]
-	[StructLayout(LayoutKind.Sequential, Pack = 1)]
 	public struct TraceInputData
 	{
 		public TraceInputData(
@@ -32,19 +30,19 @@ namespace SvoTracer.Domain.Models
 		}
 
 		//Position
-		public Vector3 Origin { get; set; }
+		public Vector3 Origin;
 		//Direction faced
-		public Vector3 Facing { get; set; }
+		public Vector3 Facing;
 		//Horizonal/vertical FoV angle of the screen
-		public Vector2 FoV { get; set; }
+		public Vector2 FoV;
 		//Depth of field made up of focal depth(the angle of the forced depth) and focal point(how deep the minimum is)
-		public Vector2 DoF { get; set; }
+		public Vector2 DoF;
 		//Screen size
-		public Vector2i ScreenSize { get; set; }
-		public byte MaxOpacity { get; set; }
+		public Vector2i ScreenSize;
+		public byte MaxOpacity;
 		//Depth of inviolate memory(Specific to voxels)
-		public byte N { get; set; }
-		public ushort Tick { get; set; }
-		public uint MaxChildRequestId { get; set; }
+		public byte N;
+		public ushort Tick;
+		public uint MaxChildRequestId;
 	}
 }

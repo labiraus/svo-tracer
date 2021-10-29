@@ -6,10 +6,11 @@ namespace SvoTracer.Domain.Models
 {
 	public struct ChildRequest
 	{
-		public uint Address { get; set; }
-		public ushort Tick { get; set; }
-		public byte Depth { get; set; }
-		public Location Location { get; set; }
-		public const int Size = 31;
+		public uint Address;
+		public ushort Tick;
+		public byte Depth;
+		public Location Location;
+		public byte TreeSize;
+		public const int Size = 32;
 	}
 }

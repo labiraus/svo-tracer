@@ -5,9 +5,9 @@ namespace SvoTracer.Domain.Models
 {
     public struct Grafting
     {
-        public uint GraftDataAddress { get; set; }
-        public uint GraftTotalSize { get; set; }
-        public byte Depth { get; set; }
-        public uint GraftAddress { get; set; }
+        public uint GraftDataAddress;
+        public uint GraftTotalSize;
+        public byte Depth;
+        public uint GraftAddress;
     }
 }

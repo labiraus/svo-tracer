@@ -133,24 +133,24 @@ ulong floatToULong(float x) {
     return (ulong)(fabs(x) * ULONG_MAX);
 }
 
-void GetSemaphor(global int *semaphor) {
-  int occupied = atom_xchg(semaphor, 1);
-  while (occupied > 0) {
-    occupied = atom_xchg(semaphor, 1);
-  }
-}
-
-void ReleaseSemaphor(global int *semaphor) {
-  int prevVal = atom_xchg(semaphor, 0);
-}
-
 float uLongToFloat(ulong x) {
   return native_divide((float)x, (float)ULONG_MAX);
 }
 
+void GetSemaphor(global int *semaphor) {
+  int occupied = atomic_xchg(semaphor, 1);
+  while (occupied > 0) {
+    occupied = atomic_xchg(semaphor, 1);
+  }
+}
+
+void ReleaseSemaphor(global int *semaphor) {
+  int prevVal = atomic_xchg(semaphor, 0);
+}
+
 ulong roundUlong(ulong value, uchar depth, bool roundUp) {
   if (roundUp)
-    return ((value & (ULONG_MAX - (ULONG_MAX >> (depth + 1)))) +
+    return ((value & (ULONG_MAX - (ULONG_MAX >> depth + 1))) +
             (ULONG_MAX - (ULONG_MAX >> 1) >> depth)) -
            value;
 
@@ -214,8 +214,7 @@ BlockData background(WorkingData *_data) {
 }
 
 void writeData(__write_only image2d_t outputImage, WorkingData *_data) {
-  write_imagef(outputImage, _data->Coord,
-               (float4)(_data->ColourR, _data->ColourB, _data->ColourG, 1));
+  write_imagef(outputImage, _data->Coord, (float4)(_data->ColourR, _data->ColourB, _data->ColourG, 1));
 }
 
 bool saveVoxelTrace(BlockData data, WorkingData *_data) {
@@ -790,18 +789,18 @@ bool startTrace(WorkingData *_data) {
            location1 > 1 + c || location2 < -c || location2 > 1 + c);
 }
 
-WorkingData *setup(int2 coord, TraceInputData _input) {
+WorkingData setup(int2 coord, TraceInputData _input) {
   WorkingData data;
   data.Coord = coord;
   data.ScreenSize = (int2)(_input.ScreenSize[0], _input.ScreenSize[1]);
   // Horizontal and vertical offset angles float h and v
   float h = _input.FoV[0] *
             native_divide((native_divide((float)_input.ScreenSize[0], 2) -
-                           (float)coord.x),
+                                         (float)coord.x),
                           (float)_input.ScreenSize[0]);
   float v = _input.FoV[1] *
             native_divide((native_divide((float)_input.ScreenSize[1], 2) -
-                           (float)coord.y),
+                                         (float)coord.y),
                           (float)_input.ScreenSize[1]);
 
   float su = native_sin(_input.Facing[2]);
@@ -875,7 +874,7 @@ WorkingData *setup(int2 coord, TraceInputData _input) {
   data.ColourR = 0;
   data.ColourB = 0;
   data.ColourG = 0;
-  return &data;
+  return data;
 }
 
 void helpDereference(global Block *blocks, global Usage *usage,
@@ -1031,7 +1030,7 @@ __kernel void prune(global ushort *bases, global Block *blocks,
   uint address = myPruning.Address;
 
   // Update base block chunk data
-  if (myPruning.Properties >> 4 & 1 == 1) {
+  if ((myPruning.Properties >> 4 & 1) == 1) {
     bases[address] = myPruning.Chunk;
     helpDereference(blocks, usage, parentSize, parentResidency, parents,
                     dereferenceQueue, dereferenceRemaining, semaphor,
@@ -1045,11 +1044,11 @@ __kernel void prune(global ushort *bases, global Block *blocks,
         blocks, usage, childRequestId, childRequests, parentSize,
         parentResidency, parents, dereferenceQueue, dereferenceRemaining,
         semaphor, pruningAddresses, inputData, address, myPruning.Depth);
-    if (address = UINT_MAX)
+    if (address == UINT_MAX)
       return;
   } else {
     // Tick of 0 means that this has been dereferenced
-    if (usage[address >> 3].Tick = 0) {
+    if (usage[address >> 3].Tick == 0) {
       helpDereference(blocks, usage, parentSize, parentResidency, parents,
                       dereferenceQueue, dereferenceRemaining, semaphor,
                       inputData.Tick);
@@ -1060,7 +1059,7 @@ __kernel void prune(global ushort *bases, global Block *blocks,
   }
 
   // CullChild
-  if (myPruning.Properties & 1 == 1) {
+  if ((myPruning.Properties & 1) == 1) {
     dereference(blocks, usage, parentSize, parentResidency, parents,
                 dereferenceQueue, dereferenceRemaining, semaphor, address,
                 inputData.Tick);
@@ -1072,14 +1071,14 @@ __kernel void prune(global ushort *bases, global Block *blocks,
   }
 
   // AlterViolability & MakeInviolate
-  if (myPruning.Properties >> 1 & 3 == 3) {
+  if ((myPruning.Properties >> 1 & 3) == 3) {
     usage[address >> 3].Tick = USHRT_MAX;
-  } else if (myPruning.Properties >> 1 & 3 == 1) {
+  } else if ((myPruning.Properties >> 1 & 3) == 1) {
     usage[address >> 3].Tick = inputData.Tick;
   }
 
   // UpdateChunk
-  if (myPruning.Properties >> 3 & 1 == 1) {
+  if ((myPruning.Properties >> 3 & 1) == 1) {
     blocks[address].Data = pruningBlockData[x];
     blocks[address].Chunk = myPruning.Chunk;
   }
@@ -1107,7 +1106,7 @@ __kernel void graft(global Block *blocks, global Usage *usage,
   uint workingTick;
   uint offset = inputData.Offset;
   // Accumulate graft array
-  while (inputData.GraftSize < addressPosition[0]) {
+  while (inputData.GraftSize < *addressPosition) {
     workingTick = usage[iterator].Tick;
     // Ensure that usage is not inviolable and is at least offset ticks ago
     if (workingTick == 0 ||
@@ -1149,7 +1148,7 @@ __kernel void graft(global Block *blocks, global Usage *usage,
         blocks, usage, childRequestId, childRequests, parentSize,
         parentResidency, parents, dereferenceQueue, dereferenceRemaining,
         semaphor, graftingAddresses, inputData, address, myGrafting.Depth);
-    if (address = UINT_MAX)
+    if (address == UINT_MAX)
       return;
     if (blocks[address].Child != UINT_MAX)
       dereference(blocks, usage, parentSize, parentResidency, parents,
@@ -1211,7 +1210,8 @@ __kernel void traceVoxel(global ushort *bases, global Block *blocks,
   int2 coord = (int2)(x, y);
   uint depthHeap[64];
   uchar baseChunk = 0;
-  WorkingData *_data = setup(coord, _input);
+  WorkingData data = setup(coord, _input);
+  WorkingData *_data = &data;
 
   depthHeap[_data->N + 1] = UINT_MAX;
   if (startTrace(_data)) {
@@ -1239,8 +1239,7 @@ __kernel void traceVoxel(global ushort *bases, global Block *blocks,
                 chunkPosition = chunk(depth, _data->Location);
                 uint localAddress = depthHeap[depth];
 
-                if ((blocks[localAddress].Chunk >> (chunkPosition * 2) & 2) ==
-                    2) {
+                if ((blocks[localAddress].Chunk >> (chunkPosition * 2) & 2) == 2) {
                   if (C == -1)
                     C = coneLevel(_data);
 
