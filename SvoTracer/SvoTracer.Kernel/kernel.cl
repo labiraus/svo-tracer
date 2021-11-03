@@ -802,39 +802,43 @@ WorkingData setup(int2 coord, TraceInputData _input) {
             native_divide((native_divide((float)_input.ScreenSize[1], 2) -
                                          (float)coord.y),
                           (float)_input.ScreenSize[1]);
+  
+  // facing vector u, v, w
+  float sinU = native_sin(_input.Facing[0]);
+  float cosU = native_cos(_input.Facing[0]);
+  float sinV = native_sin(_input.Facing[1]);
+  float cosV = native_cos(_input.Facing[1]);
+  float sinW = native_sin(_input.Facing[2]);
+  float cosW = native_cos(_input.Facing[2]);
 
-  float su = native_sin(_input.Facing[2]);
-  float cu = native_cos(_input.Facing[2]);
-  float sv = native_sin(_input.Facing[1]);
-  float cv = native_cos(_input.Facing[1]);
-  float sw = native_sin(_input.Facing[0]);
-  float cw = native_cos(_input.Facing[0]);
-  // float su2 = 0;
-  // float cu2 = 1;
-  float sv2 = native_sin(v);
-  float cv2 = native_cos(v);
-  float sw2 = native_sin(h);
-  float cw2 = native_cos(h);
+  // ray vector v2, w2
+  // float sinU2 = 0;
+  // float cosU2 = 1;
+  float sinV2 = native_sin(v);
+  float cosV2 = native_cos(v);
+  float sinW2 = native_sin(h);
+  float cosW2 = native_cos(h);
 
-  float AM11 = cv * cw;
-  float AM12 = su * sv * cw - cu * sw;
-  float AM13 = su * sw + cu * sv * cw;
-  float AM21 = cv * sw;
-  float AM22 = cu * cw + su * sv * sw;
-  float AM23 = cu * sv * sw - su * cw;
-  float AM31 = -sv;
-  float AM32 = su * cv;
-  float AM33 = cu * cv;
+  // Matrix combination of facing and ray angles
+  float AM11 = cosV * cosW;
+  float AM12 = sinU * sinV * cosW - cosU * sinW;
+  float AM13 = sinU * sinW + cosU * sinV * cosW;
+  float AM21 = cosV * sinW;
+  float AM22 = cosU * cosW + sinU * sinV * sinW;
+  float AM23 = cosU * sinV * sinW - sinU * cosW;
+  float AM31 = -sinV;
+  float AM32 = sinU * cosV;
+  float AM33 = cosU * cosV;
 
-  float BM11 = cv2 * cw2;
-  // float BM12 = su2 * sv2 * cw2 - cu2 * sw2;
-  // float BM13 = su2 * sw2 + cu2 * sv2 * cw2;
-  float BM21 = cv2 * sw2;
-  // float BM22 = cu2 * cw2 + su2 * sv2 * sw2;
-  // float BM23 = cu2 * sv2 * sw2 - su2 * cw2;
-  float BM31 = -sv2;
-  // float BM32 = su2 * cv2;
-  // float BM33 = cu2 * cv2;
+  float BM11 = cosV2 * cosW2;
+  // float BM12 = sinU2 * sinV2 * cosW2 - cosU2 * sinW2;
+  // float BM13 = sinU2 * sinW2 + cosU2 * sinV2 * cosW2;
+  float BM21 = cosV2 * sinW2;
+  // float BM22 = cosU2 * cosW2 + sinU2 * sinV2 * sinW2;
+  // float BM23 = cosU2 * sinV2 * sinW2 - sinU2 * cosW2;
+  float BM31 = -sinV2;
+  // float BM32 = sinU2 * cosV2;
+  // float BM33 = cosU2 * cosV2;
 
   float CM11 = AM11 * BM11 + AM12 * BM21 + AM13 * BM31;
   // float CM12 = AM11 * BM12 + AM12 * BM22 + AM13 * BM32;
@@ -846,20 +850,23 @@ WorkingData setup(int2 coord, TraceInputData _input) {
   // float CM32 = AM31 * BM12 + AM32 * BM22 + AM33 * BM32;
   // float CM33 = AM31 * BM13 + AM32 * BM23 + AM33 * BM33;
 
+  // Ray yaw and pitch
   float yaw = atan2(CM21, CM11);
   float pitch = -asin(CM31);
 
-  // Unit vector of direction float3 DIR
+  // Unit vector of ray direction
   float3 dir = (float3)(native_cos(yaw) * native_cos(pitch),
-                        native_sin(yaw) * native_cos(pitch), native_sin(pitch));
-  data.Direction = dir;
-  float dirLength = length(data.Direction);
-  data.Direction.x = native_divide(data.Direction.x, dirLength);
-  data.Direction.y = native_divide(data.Direction.y, dirLength);
-  data.Direction.z = native_divide(data.Direction.z, dirLength);
+                        native_sin(yaw) * native_cos(pitch), 
+                        native_sin(pitch));
+  float dirLength = length(dir);
+  data.Direction.x = native_divide(dir.x, dirLength);
+  data.Direction.y = native_divide(dir.y, dirLength);
+  data.Direction.z = native_divide(dir.z, dirLength);
+
   data.InvDirection = (float3)(native_divide(1, data.Direction.x),
                                native_divide(1, data.Direction.y),
                                native_divide(1, data.Direction.z));
+                               
   data.DirectionSignX = data.Direction.x >= 0;
   data.DirectionSignY = data.Direction.y >= 0;
   data.DirectionSignZ = data.Direction.z >= 0;
@@ -1306,16 +1313,6 @@ __kernel void traceVoxel(global ushort *bases, global Block *blocks,
   }
   saveVoxelTrace(background(_data), _data);
   writeData(outputImage, _data);
-  // calculate uv coordinates
-//   float u = x / (float)_input.ScreenSize[0];
-//   float v = y / (float)_input.ScreenSize[1];
-//   u = u * 2.0f - 1.0f;
-//   v = v * 2.0f - 1.0f;
-
-//   // calculate simple sine wave pattern
-//   float freq = 4.0f;
-//   float w = sin(u * freq + _input.Tick) * cos(v * freq + _input.Tick) * 0.5f;
-//   write_imagef(outputImage, coord, (float4)(1, w, 0, 1));
 }
 
 __kernel void traceMesh() {}

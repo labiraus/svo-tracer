@@ -25,7 +25,7 @@ namespace SvoTracer.Window
 
 		private readonly ComputeManager _computeManager;
 		private readonly WorldManager _worldManager = new();
-		private readonly StateManager _stateManager;
+		private readonly StateManager _stateManager = new();
 
 		private RenderbufferHandle glRenderbuffer = RenderbufferHandle.Zero;
 		private FramebufferHandle framebuffer = FramebufferHandle.Zero;
@@ -40,7 +40,6 @@ namespace SvoTracer.Window
 			})
 		{
 			_computeManager = buildComputeManager();
-			_stateManager = new(MouseState);
 		}
 
 		unsafe private ComputeManager buildComputeManager()
