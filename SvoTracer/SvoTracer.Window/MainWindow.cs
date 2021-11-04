@@ -26,13 +26,14 @@ namespace SvoTracer.Window
 		private readonly ComputeManager _computeManager;
 		private readonly WorldManager _worldManager = new();
 		private readonly StateManager _stateManager = new();
-
+		private readonly ITreeBuilder _treeBuilder;
+		private readonly ITreeManager _treeManager;
 		private RenderbufferHandle glRenderbuffer = RenderbufferHandle.Zero;
 		private FramebufferHandle framebuffer = FramebufferHandle.Zero;
 		#endregion
 
 		#region //Constructor
-		public MainWindow(int width, int height, string title)
+		public MainWindow(int width, int height, string title, ITreeBuilder treeBuilder, ITreeManager treeManager)
 			: base(GameWindowSettings.Default, new NativeWindowSettings()
 			{
 				Title = title,
@@ -40,6 +41,8 @@ namespace SvoTracer.Window
 			})
 		{
 			_computeManager = buildComputeManager();
+			_treeBuilder = treeBuilder;
+			_treeManager = treeManager;
 		}
 
 		unsafe private ComputeManager buildComputeManager()
@@ -64,21 +67,9 @@ namespace SvoTracer.Window
 				GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
 				initRenderBuffer();
 
-				var builder = new CubeBuilder(
-					new Vector3(0.3f, 0.3f, 0.3f),
-					new Vector3(0.3f, 0.3f, 0.6f),
-					new Vector3(0.3f, 0.6f, 0.6f),
-					new Vector3(0.3f, 0.6f, 0.3f),
-					new Vector3(0.6f, 0.3f, 0.3f),
-					new Vector3(0.6f, 0.3f, 0.6f),
-					new Vector3(0.6f, 0.6f, 0.6f),
-					new Vector3(0.6f, 0.6f, 0.3f));
-				if (!builder.TreeExists("test"))
-				{
-					builder.SaveTree("test", 5, 7, uint.MaxValue / 64);
-				}
-				setupKernels(TreeBuilder.LoadTree("test"));
-
+				if (!_treeManager.TreeExists("test"))
+					_treeManager.SaveTree("test", _treeBuilder.BuildTree(5, 7, uint.MaxValue / 64));
+				setupKernels(_treeManager.LoadTree("test"));
 				initialized = true;
 			}
 			catch (Exception ex)
@@ -307,6 +298,7 @@ namespace SvoTracer.Window
 		#region //Error
 
 		private static GLDebugProc _debugProcCallback = DebugCallback;
+
 
 		private void setDebug()
 		{

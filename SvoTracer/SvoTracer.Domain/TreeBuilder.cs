@@ -11,234 +11,251 @@ using System.Threading.Tasks;
 
 namespace SvoTracer.Domain
 {
-	public abstract class TreeBuilder
+	public abstract class TreeBuilder : ITreeBuilder
 	{
 		protected const ulong nearMax = ulong.MaxValue - (ulong.MaxValue >> 1);
-		uint maxDepth;
-		Queue<uint> stack;
-		Octree tree;
-		uint maxBlock = 0;
 
-		public abstract bool Full((float, float) a, (float, float) b, (float, float) c);
-		public abstract bool Empty((float, float) a, (float, float) b, (float, float) c);
-		protected abstract Block MakeBlock(ulong[] coordinates, int depth);
-
-		public bool TreeExists(string fileName)
-		{
-			return File.Exists($"{Environment.CurrentDirectory}\\trees\\{fileName}.oct");
-		}
-
-		public static Octree LoadTree(string fileName)
-		{
-			using FileStream fs = new FileStream($"{Environment.CurrentDirectory}\\trees\\{fileName}.oct", FileMode.Open);
-			using BinaryReader br = new BinaryReader(fs);
-			var tree = OctreeSerializer.Deserialize(br);
-
-			br.Close();
-			fs.Close();
-			return tree;
-		}
-
-		public static void SaveTree(string fileName, Octree tree)
-		{
-			try
-			{
-				if (!Directory.Exists($"{Environment.CurrentDirectory}\\trees"))
-					Directory.CreateDirectory($"{Environment.CurrentDirectory}\\trees");
-				using FileStream fs = File.Create($"{Environment.CurrentDirectory}\\trees\\{fileName}.oct", 2048, FileOptions.None);
-				using BinaryWriter bw = new BinaryWriter(fs);
-				tree.Serialize(bw);
-
-				bw.Close();
-				fs.Close();
-			}
-			catch (Exception e)
-			{
-				Console.Write(e.Message);
-				Console.ReadKey(true);
-			}
-		}
-
-
-		public void SaveTree(string fileName, byte N, byte depth, uint maxSize = 0)
-		{
-			if (tree.BlockCount == 0)
-			{
-				BuildTree(N, depth, maxSize);
-			}
-			SaveTree(fileName, tree);
-		}
+		/// <summary>
+		/// Determines whether the volume bounded within the x/y/z range contains geometry
+		/// </summary>
+		/// <param name="a">x min/maximum</param>
+		/// <param name="b">y min/maximum</param>
+		/// <param name="c">z min/maximum</param>
+		/// <returns></returns>
+		protected abstract bool ContainsGeometry((float, float) a, (float, float) b, (float, float) c);
+		/// <summary>
+		/// Determines whether the volume bounded within the x/y/z range contains empty air
+		/// </summary>
+		/// <param name="a">x min/maximum</param>
+		/// <param name="b">y min/maximum</param>
+		/// <param name="c">z min/maximum</param>
+		/// <returns></returns>
+		protected abstract bool ContainsAir((float, float) a, (float, float) b, (float, float) c);
+		/// <summary>
+		/// Builds a Block for a set of binary coordinates
+		/// </summary>
+		/// <param name="coordinates"></param>
+		/// <param name="depth"></param>
+		/// <returns></returns>
+		protected abstract Block MakeBlock(Location coordinates, ushort depth);
 
 		/// <summary>
 		/// Builds an octree using inherited class's MakeBlock method
 		/// </summary>
 		/// <param name="N">Depth of inviolate tree</param>
-		/// <param name="depth">Initial tree depth</param>
+		/// <param name="maxDepth">Initial tree depth</param>
 		/// <param name="maxSize">Maximum number of blocks available</param>
-		/// <returns></returns>
-		public Octree BuildTree(byte N, byte depth, uint maxSize = 0)
+		/// <returns>Fully build Octree</returns>
+		public Octree BuildTree(byte N, ushort maxDepth, uint maxSize = 0)
 		{
-			bool[] childrenNeeded = new bool[(uint)(1 << (3 * (int)N + 6))];
-
-			uint size = maxSize > (uint)(1 << (3 * (int)N + 6)) ? maxSize : (uint)(1 << (3 * (int)N + 6));
-			tree = new Octree()
+			// Increases MaxSize to allow at least 1 layer of block data
+			maxSize = maxSize > (uint)(1 << (3 * N + 6)) ? maxSize : (uint)(1 << (3 * N + 6));
+			Octree tree = new()
 			{
 				N = N,
 				BaseBlocks = new ushort[PowSum(N)],
-				Blocks = new Block[size]
+				Blocks = new Block[maxSize]
 			};
-			maxDepth = depth;
-			stack = new Queue<uint>();
+			buildBaseChunks(tree);
+			Queue<uint> freeAddresses = new();
+			bool[] childrenNeeded = populateInitialBlocks(tree, freeAddresses);
 
-			//Creates base levels 1 to N
-			for (ushort i = 1; i <= N; i++)
+			//Push all addresses from N+3 and over into free address stack
+			if ((maxSize >> 3) > (uint)(1 << (3 * (tree.N + 1))))
+				for (uint i = (uint)(1 << (3 * (tree.N + 1))); i < (maxSize >> 3); i++)
+					freeAddresses.Enqueue(i);
+
+			//Iterates over level N+2
+			for (uint x = 0; x < (uint)(1 << N + 2); x++)
 			{
-				for (uint z = 0; z < (uint)(1 << i); z++)
+				var xcoord = IntToBinaryCoordinate(x, N + 2);
+				for (uint y = 0; y < (uint)(1 << N + 2); y++)
 				{
-					ulong zcoord = IntToUlong(z, i);
-					for (uint y = 0; y < (uint)(1 << i); y++)
+					var ycoord = IntToBinaryCoordinate(y, N + 2);
+					for (uint z = 0; z < (uint)(1 << N + 2); z++)
 					{
-						ulong ycoord = IntToUlong(y, i);
-						for (uint x = 0; x < (uint)(1 << i); x++)
+						var i = Interleave(x, y, z);
+						if (childrenNeeded[i])
 						{
-							ulong xcoord = IntToUlong(x, i);
-							var address = PowSum((byte)(i - 1)) + Interleave(x, y, z);
-							tree.BaseBlocks[address] = BuildChunk(CoordinateRange(xcoord, i), CoordinateRange(ycoord, i), CoordinateRange(zcoord, i));
+							var zcoord = IntToBinaryCoordinate(z, N + 2);
+							uint address = freeAddresses.Dequeue() << 3;
+							tree.Blocks[i].Child = address;
+							BuildBlocks(tree, freeAddresses, address, new Location(xcoord, ycoord, zcoord), (ushort)(N + 2), maxDepth);
 						}
 					}
 				}
 			}
 
+			// Trim final tree size down to populated volume
+			tree.Blocks = tree.Blocks.Take((int)tree.BlockCount).ToArray();
+			return tree;
+		}
 
-			uint baseStart = PowSum((byte)(N - 1));
-			//Iterates over level N+1 base chunks
-			for (uint z = 0; z < (uint)(1 << (int)(N + 1)); z++)
+		/// <summary>
+		/// Iterates over level N+1 base chunks and creates Blocks at the N+2 level
+		/// </summary>
+		/// <param name="tree"></param>
+		/// <param name="freeAddresses"></param>
+		/// <returns>Whether blocks require children to be populated</returns>
+		private bool[] populateInitialBlocks(Octree tree, Queue<uint> freeAddresses)
+		{
+			bool[] childrenNeeded = new bool[(uint)(1 << (3 * tree.N + 6))];
+			uint baseStart = PowSum((byte)(tree.N - 1));
+			ushort scanDepth = (ushort)(tree.N + 1);
+			uint scanWidth = (uint)1 << scanDepth;
+			ushort blockDepth = (ushort)(tree.N + 2);
+
+			for (uint z = 0; z < scanWidth; z++)
 			{
-				var zcoord = IntToUlong(z, (ushort)(N + 1));
-				for (uint y = 0; y < (uint)(1 << (int)(N + 1)); y++)
+				var zcoord = IntToBinaryCoordinate(z, scanDepth);
+				for (uint y = 0; y < scanWidth; y++)
 				{
-					var ycoord = IntToUlong(y, (ushort)(N + 1));
-					for (uint x = 0; x < (uint)(1 << (int)(N + 1)); x++)
+					var ycoord = IntToBinaryCoordinate(y, scanDepth);
+					for (uint x = 0; x < scanWidth; x++)
 					{
-						var xcoord = IntToUlong(x, (ushort)(N + 1));
+						var xcoord = IntToBinaryCoordinate(x, scanDepth);
 						var i = Interleave(x, y, z);
-						if ((tree.BaseBlocks[baseStart + (i >> 3)] >> (int)((i & 7) * 2) & 3) == 3)
+						if ((tree.BaseBlocks[baseStart + (i >> 3)] >> (int)((i & 7) * 2) & 0b11) == 0b11)
 							//If there's children to be created, create 8 N+2 blocks
 							for (uint z2 = 0; z2 < 2; z2++)
 								for (uint y2 = 0; y2 < 2; y2++)
 									for (uint x2 = 0; x2 < 2; x2++)
 									{
 										var j = Interleave(x2, y2, z2);
-										var block = MakeBlock(new ulong[]
-										{
-											xcoord + IntToUlong(x2, (ushort)(N + 2)),
-											ycoord + IntToUlong(y2, (ushort)(N + 2)),
-											zcoord + IntToUlong(z2, (ushort)(N + 2))
-										}, (int)N + 2);
+										var block = MakeBlock(new Location
+										(
+											xcoord + IntToBinaryCoordinate(x2, blockDepth),
+											ycoord + IntToBinaryCoordinate(y2, blockDepth),
+											zcoord + IntToBinaryCoordinate(z2, blockDepth)
+										), blockDepth);
 										tree.Blocks[(i << 3) + j] = block;
-										if (maxBlock < (i << 3) + j) maxBlock = (i << 3) + j + 1;
 										childrenNeeded[(i << 3) + j] = CanHaveChildren(block.Chunk);
+
+										//Increase maxBlock to reflect maximum address residency
+										if (tree.BlockCount < (i << 3) + j + 1) tree.BlockCount = (i << 3) + j + 1;
 									}
 						else
 							//Push unused address into stack
-							stack.Enqueue(i);
+							freeAddresses.Enqueue(i);
 
 					}
 				}
 			}
+			return childrenNeeded;
+		}
 
-			//Push left over addresses into stack
-			if ((maxSize >> 3) > (uint)(1 << (3 * (int)(N + 1))))
-				for (uint i = (uint)(1 << (3 * (int)(N + 1))); i < (maxSize >> 3); i++)
-					stack.Enqueue(i);
-
-			//Iterates over level N+2
-			for (uint x = 0; x < (uint)(1 << (int)(N + 2)); x++)
+		private void buildBaseChunks(Octree tree)
+		{
+			//Creates base levels 1 to N
+			for (ushort depth = 1; depth <= tree.N; depth++)
 			{
-				var xcoord = IntToUlong(x, (ushort)(N + 2));
-				for (uint y = 0; y < (uint)(1 << (int)(N + 2)); y++)
+				for (uint z = 0; z < 1 << depth; z++)
 				{
-					var ycoord = IntToUlong(y, (ushort)(N + 2));
-					for (uint z = 0; z < (uint)(1 << (int)(N + 2)); z++)
+					ulong zcoord = IntToBinaryCoordinate(z, depth);
+					for (uint y = 0; y < 1 << depth; y++)
 					{
-						var i = Interleave(x, y, z);
-						if (childrenNeeded[i])
+						ulong ycoord = IntToBinaryCoordinate(y, depth);
+						for (uint x = 0; x < 1 << depth; x++)
 						{
-							uint address = stack.Dequeue() << 3;
-							tree.Blocks[i].Child = address;
-							BuildBlocks(address, new ulong[] { xcoord, ycoord, IntToUlong(z, (ushort)(N + 2)) }, N + 2);
+							ulong xcoord = IntToBinaryCoordinate(x, depth);
+							var address = PowSum((ushort)(depth - 1)) + Interleave(x, y, z);
+							tree.BaseBlocks[address] = MakeBaseChunk(new Location(xcoord, ycoord, zcoord), depth);
 						}
 					}
 				}
 			}
-			tree.Blocks = tree.Blocks.Take((int)maxBlock).ToArray();
-			tree.BlockCount = maxBlock;
-			return tree;
 		}
 
-		protected void BuildBlocks(uint address, ulong[] coordinates, int currentDepth)
+		/// <summary>
+		/// Adds 8 consecutive Blocks into tree and recursively adds children
+		/// </summary>
+		/// <param name="tree">Octree to insert into</param>
+		/// <param name="freeAddresses">Queue of unallocated addresses</param>
+		/// <param name="address"></param>
+		/// <param name="coordinates"></param>
+		/// <param name="currentDepth"></param>
+		protected void BuildBlocks(Octree tree, Queue<uint> freeAddresses, uint address, Location coordinates, ushort currentDepth, ushort maxDepth)
 		{
-			for (int i = 0; i < 8; i++)
+			for (byte i = 0; i < 8; i++)
 			{
-				var newCoordinates = new ulong[] {
-					coordinates[0] + ((i & 1) == 1 ? nearMax >> (currentDepth - 1): 0),
-					coordinates[1] + ((i >> 1 & 1) == 1 ? nearMax >> (currentDepth - 1) : 0),
-					coordinates[2] + ((i >> 2 & 1) == 1 ? nearMax >> (currentDepth - 1) : 0) };
+				ulong edge = nearMax >> (currentDepth - 1);
+				var newCoordinates = new Location(
+					coordinates[0] + ((i & 0b001) == 0b001 ? edge : 0),
+					coordinates[1] + ((i & 0b010) == 0b010 ? edge : 0),
+					coordinates[2] + ((i & 0b100) == 0b100 ? edge : 0));
 				var block = MakeBlock(newCoordinates, currentDepth);
 				tree.Blocks[address + i] = block;
-				if (maxBlock < address + i) maxBlock = address + (uint)i + 1;
-				if (CanHaveChildren(block.Chunk) && currentDepth < maxDepth && stack.Any())
+				if (tree.BlockCount < address + i) tree.BlockCount = address + i + 1;
+
+				if (CanHaveChildren(block.Chunk) && currentDepth < maxDepth && freeAddresses.Any())
 				{
-					var newAddress = stack.Dequeue() << 3;
+					var newAddress = freeAddresses.Dequeue() << 3;
 					block.Child = newAddress;
-					BuildBlocks(newAddress, newCoordinates, currentDepth + 1);
+					BuildBlocks(tree, freeAddresses, newAddress, newCoordinates, (ushort)(currentDepth + 1), maxDepth);
 				}
 			}
 		}
 
-		protected ushort MakeBase(ulong[] coordinates, int depth)
+		protected ushort MakeBaseChunk(Location coordinates, ushort depth)
 		{
 			return BuildChunk(CoordinateRange(coordinates[0], depth), CoordinateRange(coordinates[1], depth), CoordinateRange(coordinates[2], depth));
 		}
 
-		protected ushort BuildChunk((float, float, float) x, (float, float, float) y, (float, float, float) z)
+		/// <summary>
+		/// Creates chunk data from coordinates
+		/// </summary>
+		/// <param name="x"></param>
+		/// <param name="y"></param>
+		/// <param name="z"></param>
+		/// <returns></returns>
+		protected ushort BuildChunk((float min, float midpoint, float max) x, (float min, float midpoint, float max) y, (float min, float midpoint, float max) z)
 		{
-			var chunk = (ushort)((Empty((x.Item1, x.Item2), (y.Item1, y.Item2), (z.Item1, z.Item2)) ? 1 : 0)
-				+ (Full((x.Item1, x.Item2), (y.Item1, y.Item2), (z.Item1, z.Item2)) ? 1 << 1 : 0)
-				+ (Empty((x.Item2, x.Item3), (y.Item1, y.Item2), (z.Item1, z.Item2)) ? 1 << 2 : 0)
-				+ (Full((x.Item2, x.Item3), (y.Item1, y.Item2), (z.Item1, z.Item2)) ? 1 << 3 : 0)
-				+ (Empty((x.Item1, x.Item2), (y.Item2, y.Item3), (z.Item1, z.Item2)) ? 1 << 4 : 0)
-				+ (Full((x.Item1, x.Item2), (y.Item2, y.Item3), (z.Item1, z.Item2)) ? 1 << 5 : 0)
-				+ (Empty((x.Item2, x.Item3), (y.Item2, y.Item3), (z.Item1, z.Item2)) ? 1 << 6 : 0)
-				+ (Full((x.Item2, x.Item3), (y.Item2, y.Item3), (z.Item1, z.Item2)) ? 1 << 7 : 0)
-				+ (Empty((x.Item1, x.Item2), (y.Item1, y.Item2), (z.Item2, z.Item3)) ? 1 << 8 : 0)
-				+ (Full((x.Item1, x.Item2), (y.Item1, y.Item2), (z.Item2, z.Item3)) ? 1 << 9 : 0)
-				+ (Empty((x.Item2, x.Item3), (y.Item1, y.Item2), (z.Item2, z.Item3)) ? 1 << 10 : 0)
-				+ (Full((x.Item2, x.Item3), (y.Item1, y.Item2), (z.Item2, z.Item3)) ? 1 << 11 : 0)
-				+ (Empty((x.Item1, x.Item2), (y.Item2, y.Item3), (z.Item2, z.Item3)) ? 1 << 12 : 0)
-				+ (Full((x.Item1, x.Item2), (y.Item2, y.Item3), (z.Item2, z.Item3)) ? 1 << 13 : 0)
-				+ (Empty((x.Item2, x.Item3), (y.Item2, y.Item3), (z.Item2, z.Item3)) ? 1 << 14 : 0)
-				+ (Full((x.Item2, x.Item3), (y.Item2, y.Item3), (z.Item2, z.Item3)) ? 1 << 15 : 0));
+			var chunk = (ushort)((ContainsAir((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 : 0)
+				+ (ContainsGeometry((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 1 : 0)
+				+ (ContainsAir((x.midpoint, x.max), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 2 : 0)
+				+ (ContainsGeometry((x.midpoint, x.max), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 3 : 0)
+				+ (ContainsAir((x.min, x.midpoint), (y.midpoint, y.max), (z.min, z.midpoint)) ? 1 << 4 : 0)
+				+ (ContainsGeometry((x.min, x.midpoint), (y.midpoint, y.max), (z.min, z.midpoint)) ? 1 << 5 : 0)
+				+ (ContainsAir((x.midpoint, x.max), (y.midpoint, y.max), (z.min, z.midpoint)) ? 1 << 6 : 0)
+				+ (ContainsGeometry((x.midpoint, x.max), (y.midpoint, y.max), (z.min, z.midpoint)) ? 1 << 7 : 0)
+				+ (ContainsAir((x.min, x.midpoint), (y.min, y.midpoint), (z.midpoint, z.max)) ? 1 << 8 : 0)
+				+ (ContainsGeometry((x.min, x.midpoint), (y.min, y.midpoint), (z.midpoint, z.max)) ? 1 << 9 : 0)
+				+ (ContainsAir((x.midpoint, x.max), (y.min, y.midpoint), (z.midpoint, z.max)) ? 1 << 10 : 0)
+				+ (ContainsGeometry((x.midpoint, x.max), (y.min, y.midpoint), (z.midpoint, z.max)) ? 1 << 11 : 0)
+				+ (ContainsAir((x.min, x.midpoint), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 12 : 0)
+				+ (ContainsGeometry((x.min, x.midpoint), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 13 : 0)
+				+ (ContainsAir((x.midpoint, x.max), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 14 : 0)
+				+ (ContainsGeometry((x.midpoint, x.max), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 15 : 0));
 			return chunk;
 		}
 
-
-		public static bool CanHaveChildren(ushort chunk)
+		/// <summary>
+		/// Determines if chunk data indicates a child that contains both geometry and empty air
+		/// </summary>
+		/// <param name="chunk">Bit pairs representing </param>
+		/// <returns>true if any child contains an interface</returns>
+		protected static bool CanHaveChildren(ushort chunk)
 		{
-			return (((chunk & 3) == 3) ||
-				((chunk & 12) == 12) ||
-				((chunk & 48) == 48) ||
-				((chunk & 192) == 192) ||
-				((chunk & 768) == 768) ||
-				((chunk & 3072) == 3072) ||
-				((chunk & 12288) == 12288) ||
-				((chunk & 49152) == 49152));
+			return (
+				((chunk & 0b0000000000000011) == 0b0000000000000011) ||
+				((chunk & 0b0000000000001100) == 0b0000000000001100) ||
+				((chunk & 0b0000000000110000) == 0b0000000000110000) ||
+				((chunk & 0b0000000011000000) == 0b0000000011000000) ||
+				((chunk & 0b0000001100000000) == 0b0000001100000000) ||
+				((chunk & 0b0000110000000000) == 0b0000110000000000) ||
+				((chunk & 0b0011000000000000) == 0b0011000000000000) ||
+				((chunk & 0b1100000000000000) == 0b1100000000000000));
 		}
 
-		protected static ulong IntToUlong(uint x, ushort depth)
+		protected static ulong IntToBinaryCoordinate(uint x, int depth)
+		{
+			return IntToBinaryCoordinate(x, (ushort)depth);
+		}
+
+		protected static ulong IntToBinaryCoordinate(uint x, ushort depth)
 		{
 			ulong output = 0;
-			for (int i = 0; i <= depth; i++)
+			for (ushort i = 0; i <= depth; i++)
 			{
 				if ((x >> i & 1) == 1)
 					output += (nearMax >> (depth - i - 1));
@@ -246,13 +263,13 @@ namespace SvoTracer.Domain
 			return output;
 		}
 
-		public static (float, float, float) CoordinateRange(ulong coordinate, int depth)
+		protected static (float, float, float) CoordinateRange(ulong binaryCoordinate, ushort depth)
 		{
 			float start = 0, end = 1, division = 1;
-			for (int i = 0; i < depth; i++)
+			for (ushort i = 0; i < depth; i++)
 			{
 				division /= 2;
-				if ((coordinate & (nearMax >> i)) > 0)
+				if ((binaryCoordinate & (nearMax >> i)) > 0)
 					start += division;
 				else
 					end -= division;
@@ -260,6 +277,13 @@ namespace SvoTracer.Domain
 			return (start, (start + end) / 2, end);
 		}
 
+		/// <summary>
+		/// Combines 3 values one bit at a time to create a predictable address
+		/// </summary>
+		/// <param name="x"></param>
+		/// <param name="y"></param>
+		/// <param name="z"></param>
+		/// <returns></returns>
 		protected static uint Interleave(uint x, uint y, uint z)
 		{
 			uint output = 0;
@@ -272,7 +296,7 @@ namespace SvoTracer.Domain
 			return output;
 		}
 
-		public static uint PowSum(byte depth)
+		public static uint PowSum(ushort depth)
 		{
 			uint output = 0;
 			for (int i = 1; i <= depth; i++)

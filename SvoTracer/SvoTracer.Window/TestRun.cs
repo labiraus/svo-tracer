@@ -8,18 +8,8 @@ namespace SvoTracer
 {
 	public class TestRun
 	{
-		public void Run()
+		public void Run(ITreeBuilder treeBuilder, ITreeManager treeManager)
 		{
-			var builder = new CubeBuilder(
-				new Vector3(0.3f, 0.3f, 0.3f),
-				new Vector3(0.3f, 0.3f, 0.6f),
-				new Vector3(0.3f, 0.6f, 0.6f),
-				new Vector3(0.3f, 0.6f, 0.3f),
-				new Vector3(0.6f, 0.3f, 0.3f),
-				new Vector3(0.6f, 0.3f, 0.6f),
-				new Vector3(0.6f, 0.6f, 0.6f),
-				new Vector3(0.6f, 0.6f, 0.3f));
-
 			var input = new TraceInputData(
 				new OpenTK.Mathematics.Vector3(0.5f, 0.5f, -2f),
 				new OpenTK.Mathematics.Vector3(0, (float)Math.PI / 2f, 0),
@@ -34,11 +24,9 @@ namespace SvoTracer
 
 			try
 			{
-				if (!builder.TreeExists("test"))
-				{
-					builder.SaveTree("test", 5, 7, uint.MaxValue / 64);
-				}
-				var tree = TreeBuilder.LoadTree("test");
+				if (!treeManager.TreeExists("test"))
+					treeManager.SaveTree("test", treeBuilder.BuildTree(5, 7, uint.MaxValue / 64));
+				var tree = treeManager.LoadTree("test");
 				var usage = new Usage[tree.BlockCount >> 3];
 				var baseStart = TreeBuilder.PowSum((byte)(tree.N - 1));
 				var range = TreeBuilder.PowSum(tree.N) << 3;
