@@ -56,9 +56,9 @@ namespace SvoTracer.Domain
 				BaseBlocks = new ushort[PowSum(N)],
 				Blocks = new Block[maxSize]
 			};
-			buildBaseChunks(tree);
+			buildBaseChunks(ref tree);
 			Queue<uint> freeAddresses = new();
-			bool[] childrenNeeded = populateInitialBlocks(tree, freeAddresses);
+			bool[] childrenNeeded = populateInitialBlocks(ref tree, freeAddresses);
 
 			//Push all addresses from N+3 and over into free address stack
 			if ((maxSize >> 3) > (uint)(1 << (3 * (tree.N + 1))))
@@ -80,7 +80,7 @@ namespace SvoTracer.Domain
 							var zcoord = IntToBinaryCoordinate(z, N + 2);
 							uint address = freeAddresses.Dequeue() << 3;
 							tree.Blocks[i].Child = address;
-							BuildBlocks(tree, freeAddresses, address, new Location(xcoord, ycoord, zcoord), (ushort)(N + 2), maxDepth);
+							BuildBlocks(ref tree, freeAddresses, address, new Location(xcoord, ycoord, zcoord), (ushort)(N + 2), maxDepth);
 						}
 					}
 				}
@@ -97,7 +97,7 @@ namespace SvoTracer.Domain
 		/// <param name="tree"></param>
 		/// <param name="freeAddresses"></param>
 		/// <returns>Whether blocks require children to be populated</returns>
-		private bool[] populateInitialBlocks(Octree tree, Queue<uint> freeAddresses)
+		private bool[] populateInitialBlocks(ref Octree tree, Queue<uint> freeAddresses)
 		{
 			bool[] childrenNeeded = new bool[(uint)(1 << (3 * tree.N + 6))];
 			uint baseStart = PowSum((byte)(tree.N - 1));
@@ -144,7 +144,7 @@ namespace SvoTracer.Domain
 			return childrenNeeded;
 		}
 
-		private void buildBaseChunks(Octree tree)
+		private void buildBaseChunks(ref Octree tree)
 		{
 			//Creates base levels 1 to N
 			for (ushort depth = 1; depth <= tree.N; depth++)
@@ -174,7 +174,7 @@ namespace SvoTracer.Domain
 		/// <param name="address"></param>
 		/// <param name="coordinates"></param>
 		/// <param name="currentDepth"></param>
-		protected void BuildBlocks(Octree tree, Queue<uint> freeAddresses, uint address, Location coordinates, ushort currentDepth, ushort maxDepth)
+		protected void BuildBlocks(ref Octree tree, Queue<uint> freeAddresses, uint address, Location coordinates, ushort currentDepth, ushort maxDepth)
 		{
 			for (byte i = 0; i < 8; i++)
 			{
@@ -191,7 +191,7 @@ namespace SvoTracer.Domain
 				{
 					var newAddress = freeAddresses.Dequeue() << 3;
 					block.Child = newAddress;
-					BuildBlocks(tree, freeAddresses, newAddress, newCoordinates, (ushort)(currentDepth + 1), maxDepth);
+					BuildBlocks(ref tree, freeAddresses, newAddress, newCoordinates, (ushort)(currentDepth + 1), maxDepth);
 				}
 			}
 		}

@@ -22,15 +22,7 @@ namespace SvoTracer.Kernel
 				resultCode = CL.GetPlatformInfo(platformId, PlatformInfo.Extensions, out byte[] bytes);
 				ComputeManager.HandleResultCode(resultCode, "CL.GetPlatformInfo:Extensions");
 				var extensions = Encoding.ASCII.GetString(bytes).Split(" ");
-				bool supported = false;
-				foreach (var supportedExtension in extensions)
-					if (supportedExtension == "cl_khr_gl_sharing")
-					{
-						supported = true;
-						break;
-					}
-
-				if (supported)
+				if (extensions.Any(x => x == "cl_khr_gl_sharing"))
 				{
 					platform = platformId;
 					break;
