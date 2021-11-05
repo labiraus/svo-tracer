@@ -19,8 +19,17 @@ namespace SvoTracer.Kernel
 			CLPlatform platform = CLPlatform.Zero;
 			foreach (var platformId in platformIds)
 			{
-				resultCode = platformId.SupportsPlatformExtension("cl_khr_gl_sharing", out bool supported);
-				ComputeManager.HandleResultCode(resultCode, "SupportsPlatformExtension");
+				resultCode = CL.GetPlatformInfo(platformId, PlatformInfo.Extensions, out byte[] bytes);
+				ComputeManager.HandleResultCode(resultCode, "CL.GetPlatformInfo:Extensions");
+				var extensions = Encoding.ASCII.GetString(bytes).Split(" ");
+				bool supported = false;
+				foreach (var supportedExtension in extensions)
+					if (supportedExtension == "cl_khr_gl_sharing")
+					{
+						supported = true;
+						break;
+					}
+
 				if (supported)
 				{
 					platform = platformId;
@@ -32,11 +41,11 @@ namespace SvoTracer.Kernel
 				throw new Exception("Platform supporting cl_khr_gl_sharing not found");
 			}
 
-			resultCode = platform.GetDeviceIDs(DeviceType.Gpu, out CLDevice[] devices);
+			resultCode = CL.GetDeviceIDs(platform, DeviceType.Gpu, out CLDevice[] devices);
 			ComputeManager.HandleResultCode(resultCode, "GetDeviceIDs");
 			foreach (var deviceId in devices)
 			{
-				resultCode = deviceId.GetDeviceInfo(DeviceInfo.Extensions, out byte[] bytes);
+				resultCode = CL.GetDeviceInfo(deviceId, DeviceInfo.Extensions, out byte[] bytes);
 				ComputeManager.HandleResultCode(resultCode, "GetDeviceInfo");
 				var extensions = Encoding.ASCII.GetString(bytes).Split(" ");
 				if (extensions.Any(x => x == "cl_khr_gl_sharing"))
@@ -62,19 +71,19 @@ namespace SvoTracer.Kernel
 			//props.GlContextKHR = (IntPtr)GLFW.GetGLXContext(base.WindowPtr);
 			//props.GlxDisplayKHR = (IntPtr)GLFW.GetX11Window(base.WindowPtr);
 
-			var context = props.CreateContextFromType(DeviceType.Gpu, null, IntPtr.Zero, out resultCode);
+			var context = CL.CreateContextFromType(props, DeviceType.Gpu, null, IntPtr.Zero, out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateContextFromType");
-			var commandQueue = context.CreateCommandQueueWithProperties(device, new CLCommandQueueProperties(), out resultCode);
+			var commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties");
 
 			var programSources = programFiles.Select(x => KernelLoader.Get(x)).ToArray();
 
-			var program = context.CreateProgramWithSource(programFiles.Select(x => KernelLoader.Get(x)).ToArray(), out resultCode);
+			var program = CL.CreateProgramWithSource(context, programFiles.Select(x => KernelLoader.Get(x)).ToArray(), out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateProgramWithSource");
-			resultCode = program.BuildProgram(new[] { device }, null, null, IntPtr.Zero);
+			resultCode = CL.BuildProgram(program, new[] { device }, null, null, IntPtr.Zero);
 			if (resultCode == CLResultCode.BuildProgramFailure)
 			{
-				program.GetProgramBuildInfo(device, ProgramBuildInfo.Log, out byte[] bytes);
+				CL.GetProgramBuildInfo(program, device, ProgramBuildInfo.Log, out byte[] bytes);
 				Console.WriteLine(Encoding.ASCII.GetString(bytes));
 			}
 			ComputeManager.HandleResultCode(resultCode, "BuildProgram");
