@@ -134,7 +134,7 @@ ulong floatToULong(float x) {
     return (ulong)(fabs(x) * ULONG_MAX);
 }
 
-float uLongToFloat(ulong x) { return native_divide((float)x, (float)ULONG_MAX); }
+float ulongToFloat(ulong x) { return native_divide((float)x, (float)ULONG_MAX); }
 
 void getSemaphor(global int *semaphor) {
   int occupied = atomic_xchg(semaphor, 1);
@@ -192,9 +192,9 @@ float coneSize(float m, WorkingData *_data) {
 
 // Determine the maximum tree depth for a cone at this location
 void setConeDepth(WorkingData *_data) {
-  float cone = coneSize(fabs(fast_length((float3)(_data->Origin.x - uLongToFloat(_data->Location.x),
-                                                  _data->Origin.y - uLongToFloat(_data->Location.y),
-                                                  _data->Origin.z - uLongToFloat(_data->Location.z)))),
+  float cone = coneSize(fabs(fast_length((float3)(_data->Origin.x - ulongToFloat(_data->Location.x),
+                                                  _data->Origin.y - ulongToFloat(_data->Location.y),
+                                                  _data->Origin.z - ulongToFloat(_data->Location.z)))),
                         _data);
   _data->ConeDepth = -half_log2(cone);
   _data->ConeDepth = 20;
@@ -273,21 +273,21 @@ uchar traverseChunk(uchar depth, uchar position, WorkingData *_data) {
   bool success = true;
 
   if (ax <= ay && ax <= az) {
-    float udx = uLongToFloat(dx);
+    float udx = ulongToFloat(dx);
     dy = floatToULong(_data->Direction.y * _data->InvDirection.x * udx);
     dz = floatToULong(_data->Direction.z * _data->InvDirection.x * udx);
 
     if ((_data->DirectionSignX && (position & 1) == 1) || (!_data->DirectionSignX && (position & 1) == 0))
       success = false;
   } else if (ay <= ax && ay <= az) {
-    float udy = uLongToFloat(dy);
+    float udy = ulongToFloat(dy);
     dx = floatToULong(_data->Direction.x * _data->InvDirection.y * udy);
     dz = floatToULong(_data->Direction.z * _data->InvDirection.y * udy);
 
     if ((_data->DirectionSignY && (position >> 1 & 1) == 1) || (!_data->DirectionSignY && (position >> 1 & 1) == 0))
       success = false;
   } else {
-    float udz = uLongToFloat(dz);
+    float udz = ulongToFloat(dz);
     dx = floatToULong(_data->Direction.x * _data->InvDirection.z * udz);
     dy = floatToULong(_data->Direction.y * _data->InvDirection.z * udz);
 
@@ -1155,7 +1155,6 @@ __kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usag
                          global ChildRequest *childRequests, __write_only image2d_t outputImage,
                          TraceInputData _input) {
   uchar depth = 1;
-  uchar chunkPosition;
   uint offset;
   uint address;
   uint x = get_global_id(0);
@@ -1171,45 +1170,43 @@ __kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usag
   }
   setConeDepth(_data);
 
-  // Used to navigate back up the tree
+  // block location at each layer of depth
   uint depthHeap[64];
   depthHeap[_data->N + 1] = UINT_MAX;
   while (depth > 0) {
     bool baseLoop = true;
     while (baseLoop) {
       // determine current base and chunk location
-      chunkPosition = chunk(depth, _data->Location);
       offset = powSum(depth - 1);
       address = baseLocation(depth, _data->Location);
 
-      // check base chunks to see if current location contains an interface
-      if ((bases[offset + address] >> (chunkPosition * 2) & 2) == 2) {
+      // check base chunks to see if current location contains solid
+      if ((bases[offset + address] >> (chunk(depth, _data->Location) * 2) & 2) == 2) {
         if (depth < _data->N) {
           // Still traversing base chunks
           depth++;
         } else {
           // Traversing blocks
-          if (depth == _data->N)
+          if (depth == _data->N) {
             depth += 2;
+            depthHeap[_data->N + 2] = baseLocation(_data->N + 2, _data->Location);
+          }
 
-          depthHeap[depth] = baseLocation(depth, _data->Location);
-          baseChunk = chunkPosition;
-
-          while (depth > (_data->N + 1) && !leaving(_data)) {
+          while (depth > (_data->N + 1)) {
             // Update usage
             uint usageAddress = depthHeap[depth] >> 3;
             if (usage[usageAddress].Tick < USHRT_MAX - 1)
               usage[usageAddress].Tick = _data->Tick;
 
+            // Loop over block and its children
             bool blockLoop = true;
             while (blockLoop) {
-              chunkPosition = chunk(depth, _data->Location);
               uint localAddress = depthHeap[depth];
 
               // Check if current chunk contains geometry
-              if (((blocks[localAddress].Chunk >> (chunkPosition * 2)) & 2) == 2) {
+              if (((blocks[localAddress].Chunk >> (chunk(depth, _data->Location) * 2)) & 2) == 2) {
 
-                depthHeap[depth + 1] = blocks[localAddress].Child + chunkPosition;
+                depthHeap[depth + 1] = blocks[localAddress].Child + chunk(depth, _data->Location);
                 // C value is too diffuse to use
                 if (_data->ConeDepth < (_data->N + 2)) {
                   depth = _data->N + 2;
@@ -1249,24 +1246,20 @@ __kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usag
               }
 
               else {
-                blockLoop = traverseChunk(depth, chunkPosition, _data);
+                blockLoop = traverseChunk(depth, chunk(depth, _data->Location), _data);
                 if (leaving(_data)) {
                   writeBackgroundData(outputImage, _data);
                   return;
                 }
               }
             }
-
-            if (depth == (_data->N + 2) && baseChunk == chunk(_data->N + 1, _data->Location)) {
-              depthHeap[depth] = baseLocation(depth, _data->Location);
-            } else
-              depth--;
+            depth--;
           }
 
           depth = _data->N;
         }
       } else {
-        baseLoop = traverseChunk(depth, chunkPosition, _data);
+        baseLoop = traverseChunk(depth, chunk(depth, _data->Location), _data);
         if (leaving(_data)) {
           writeBackgroundData(outputImage, _data);
           return;

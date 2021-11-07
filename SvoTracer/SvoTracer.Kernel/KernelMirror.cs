@@ -52,7 +52,7 @@ namespace SvoTracer.Kernel
 				return (ulong)(Math.Abs(x) * ulong.MaxValue);
 		}
 
-		static float uLongToFloat(ulong x)
+		static float ulongToFloat(ulong x)
 		{
 			return native_divide((float)x, (float)ulong.MaxValue);
 		}
@@ -140,9 +140,9 @@ namespace SvoTracer.Kernel
 		/// <returns></returns>
 		static void setConeDepth(ref WorkingData _data)
 		{
-			_data.ConeDepth =  -(float)Math.Log(coneSize(Math.Abs(new Vector3(_data.Origin.X - uLongToFloat(_data.Location.X),
-				_data.Origin.Y - uLongToFloat(_data.Location.Y),
-				_data.Origin.Z - uLongToFloat(_data.Location.Z)).Length), ref _data), 2);
+			_data.ConeDepth = -(float)Math.Log(coneSize(Math.Abs(new Vector3(_data.Origin.X - ulongToFloat(_data.Location.X),
+				_data.Origin.Y - ulongToFloat(_data.Location.Y),
+				_data.Origin.Z - ulongToFloat(_data.Location.Z)).Length), ref _data), 2);
 		}
 
 		static BlockData background(ref WorkingData _data)
@@ -242,7 +242,7 @@ namespace SvoTracer.Kernel
 
 			if (ax <= ay && ax <= az)
 			{
-				float udx = uLongToFloat(dx);
+				float udx = ulongToFloat(dx);
 				dy = floatToULong(_data.Direction.Y * _data.InvDirection.X * udx);
 				dz = floatToULong(_data.Direction.Z * _data.InvDirection.X * udx);
 
@@ -251,7 +251,7 @@ namespace SvoTracer.Kernel
 			}
 			else if (ay <= ax && ay <= az)
 			{
-				float udy = uLongToFloat(dy);
+				float udy = ulongToFloat(dy);
 				dx = floatToULong(_data.Direction.X * _data.InvDirection.Y * udy);
 				dz = floatToULong(_data.Direction.Z * _data.InvDirection.Y * udy);
 
@@ -260,7 +260,7 @@ namespace SvoTracer.Kernel
 			}
 			else
 			{
-				float udz = uLongToFloat(dz);
+				float udz = ulongToFloat(dz);
 				dx = floatToULong(_data.Direction.X * _data.InvDirection.Z * udz);
 				dy = floatToULong(_data.Direction.Y * _data.InvDirection.Z * udz);
 
@@ -1315,7 +1315,6 @@ namespace SvoTracer.Kernel
 						 TraceInputData _input)
 		{
 			byte depth = 1;
-			byte chunkPosition;
 			uint offset;
 			uint address;
 			uint x = get_global_id(0);
@@ -1339,12 +1338,11 @@ namespace SvoTracer.Kernel
 				while (baseLoop)
 				{
 					// determine current base and chunk location
-					chunkPosition = chunk(depth, ref _data.Location);
 					offset = powSum((byte)(depth - 1));
 					address = baseLocation(depth, ref _data.Location);
 
 					// check base chunks to see if current location contains an interface
-					if ((bases[offset + address] >> (chunkPosition * 2) & 2) == 2)
+					if ((bases[offset + address] >> (chunk(depth, ref _data.Location) * 2) & 2) == 2)
 					{
 						if (depth < _data.N)
 							// still traversing base chunks
@@ -1353,10 +1351,10 @@ namespace SvoTracer.Kernel
 						{
 							// now traversing blocks
 							if (depth == _data.N)
+							{
 								depth += 2;
-
-							depthHeap[depth] = baseLocation(depth, ref _data.Location);
-							baseChunkPosition = chunkPosition;
+								depthHeap[_data.N + 2] = baseLocation((byte)(_data.N + 2), ref _data.Location);
+							}
 
 							while (depth > (_data.N + 1))
 							{
@@ -1369,12 +1367,11 @@ namespace SvoTracer.Kernel
 								bool blockLoop = true;
 								while (blockLoop)
 								{
-									chunkPosition = chunk(depth, ref _data.Location);
 									uint localAddress = depthHeap[depth];
 
-									if ((blocks[localAddress].Chunk >> (chunkPosition * 2) & 2) == 2)
+									if ((blocks[localAddress].Chunk >> (chunk(depth, ref _data.Location) * 2) & 2) == 2)
 									{
-										depthHeap[depth + 1] = blocks[localAddress].Child + chunkPosition;
+										depthHeap[depth + 1] = blocks[localAddress].Child + chunk(depth, ref _data.Location);
 
 										// C value is too diffuse to use
 										if (_data.ConeDepth < (_data.N + 2))
@@ -1386,9 +1383,11 @@ namespace SvoTracer.Kernel
 												return;
 											}
 										}
+
 										// C value requires me to go up a level
 										else if (_data.ConeDepth < depth)
 											break;
+
 										// No additional data could be found at child depth
 										else if (blocks[localAddress].Child == uint.MaxValue)
 										{
@@ -1401,9 +1400,11 @@ namespace SvoTracer.Kernel
 												return;
 											}
 										}
+
 										// Navigate to child
 										else if (_data.ConeDepth > (depth + 1))
 											depth++;
+
 										// Resolve the colour of this voxel
 										else if (depth <= _data.ConeDepth && _data.ConeDepth <= (depth + 1))
 										{
@@ -1416,7 +1417,7 @@ namespace SvoTracer.Kernel
 									}
 									else
 									{
-										blockLoop = traverseChunk(depth, chunkPosition, ref _data);
+										blockLoop = traverseChunk(depth, chunk(depth, ref _data.Location), ref _data);
 										if (leaving(ref _data))
 										{
 											writeBackgroundData(outputImage, ref _data);
@@ -1424,11 +1425,7 @@ namespace SvoTracer.Kernel
 										}
 									}
 								}
-
-								if (depth == (_data.N + 2) && baseChunkPosition == chunk((byte)(_data.N + 1), ref _data.Location)) // don't like this basechunk check
-									depthHeap[depth] = baseLocation(depth, ref _data.Location);
-								else
-									depth--;
+								depth--;
 							}
 							depth = _data.N;
 						}
@@ -1436,7 +1433,7 @@ namespace SvoTracer.Kernel
 					}
 					else
 					{
-						baseLoop = traverseChunk(depth, chunkPosition, ref _data);
+						baseLoop = traverseChunk(depth, chunk(depth, ref _data.Location), ref _data);
 						if (leaving(ref _data))
 						{
 							writeBackgroundData(outputImage, ref _data);
