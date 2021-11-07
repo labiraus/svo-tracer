@@ -3,7 +3,7 @@ using SvoTracer.Domain;
 using SvoTracer.Domain.Models;
 using System;
 using System.Linq;
-using System.Numerics;
+using OpenTK.Mathematics;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using OpenTK.Compute.OpenCL;
@@ -26,87 +26,26 @@ namespace SvoTracer.Window
 		private readonly ComputeManager _computeManager;
 		private readonly WorldManager _worldManager = new();
 		private readonly StateManager _stateManager = new();
-		private readonly ITreeBuilder _treeBuilder;
-		private readonly ITreeManager _treeManager;
 		private RenderbufferHandle glRenderbuffer = RenderbufferHandle.Zero;
 		private FramebufferHandle framebuffer = FramebufferHandle.Zero;
 		#endregion
 
 		#region //Constructor
-		public MainWindow(int width, int height, string title, ITreeBuilder treeBuilder, ITreeManager treeManager)
+		public MainWindow(int width, int height, string title, Octree tree)
 			: base(GameWindowSettings.Default, new NativeWindowSettings()
 			{
 				Title = title,
-				Size = new OpenTK.Mathematics.Vector2i(width, height)
+				Size = new Vector2i(width, height)
 			})
 		{
 			_computeManager = buildComputeManager();
-			_treeBuilder = treeBuilder;
-			_treeManager = treeManager;
+			setupKernels(tree);
 		}
 
 		unsafe private ComputeManager buildComputeManager()
 		{
 			return ComputeManagerFactory.Build(GLFW.GetWGLContext(WindowPtr), GLFW.GetWin32Window(base.WindowPtr), new[] { "kernel.cl" });
 		}
-
-		#endregion
-
-		#region //Load
-		protected override void OnLoad()
-		{
-			base.OnLoad();
-			Stopwatch watch = new Stopwatch();
-			watch.Start();
-			setDebug();
-
-			try
-			{
-				// Set up the buffers
-				framebuffer = GL.CreateFramebuffer();
-				GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
-				initRenderBuffer();
-
-				if (!_treeManager.TreeExists("test"))
-					_treeManager.SaveTree("test", _treeBuilder.BuildTree(5, 7, uint.MaxValue / 64));
-				setupKernels(_treeManager.LoadTree("test"));
-				initialized = true;
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine(ex);
-				Console.ReadLine();
-				base.Close();
-			}
-			finally
-			{
-				watch.Stop();
-				Console.WriteLine(watch.Elapsed);
-			}
-		}
-
-		private void initRenderBuffer()
-		{
-			// Remove buffers if they already exist
-			if (glRenderbuffer != RenderbufferHandle.Zero)
-				GL.DeleteRenderbuffer(glRenderbuffer);
-
-			// Initializes the render buffer
-			glRenderbuffer = GL.CreateRenderbuffer();
-			GL.NamedRenderbufferStorage(glRenderbuffer, InternalFormat.Rgba32f, Size.X, Size.Y);
-			GL.NamedFramebufferRenderbuffer(framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, glRenderbuffer);
-			var err = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
-			if (err != FramebufferStatus.FramebufferComplete)
-				throw new Exception($"CheckFramebufferStatus returned: {err}");
-			GL.Flush();
-
-			// Setup CL renderbuffer
-			_computeManager.InitRenderbuffer((uint)glRenderbuffer.Handle);
-		}
-
-		#endregion
-
-		#region //Data Processing
 
 		private void setupKernels(Octree octree)
 		{
@@ -170,6 +109,60 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.TraceVoxel, "childRequestId", BufferName.ChildRequestId);
 			_computeManager.SetArg(KernelName.TraceVoxel, "childRequests", BufferName.ChildRequests);
 		}
+
+		#endregion
+
+		#region //Load
+		protected override void OnLoad()
+		{
+			base.OnLoad();
+			Stopwatch watch = new Stopwatch();
+			watch.Start();
+			setDebug();
+
+			try
+			{
+				// Set up the buffers
+				framebuffer = GL.CreateFramebuffer();
+				GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
+				initRenderBuffer();
+				initialized = true;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine(ex);
+				Console.ReadLine();
+				base.Close();
+			}
+			finally
+			{
+				watch.Stop();
+				Console.WriteLine(watch.Elapsed);
+			}
+		}
+
+		private void initRenderBuffer()
+		{
+			// Remove buffers if they already exist
+			if (glRenderbuffer != RenderbufferHandle.Zero)
+				GL.DeleteRenderbuffer(glRenderbuffer);
+
+			// Initializes the render buffer
+			glRenderbuffer = GL.CreateRenderbuffer();
+			GL.NamedRenderbufferStorage(glRenderbuffer, InternalFormat.Rgba32f, Size.X, Size.Y);
+			GL.NamedFramebufferRenderbuffer(framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, glRenderbuffer);
+			var err = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+			if (err != FramebufferStatus.FramebufferComplete)
+				throw new Exception($"CheckFramebufferStatus returned: {err}");
+			GL.Flush();
+
+			// Setup CL renderbuffer
+			_computeManager.InitRenderbuffer((uint)glRenderbuffer.Handle);
+		}
+
+		#endregion
+
+		#region //Data Processing
 
 		private void runKernels()
 		{
@@ -287,8 +280,6 @@ namespace SvoTracer.Window
 			runKernels();
 
 			// Display Scene
-			GL.Viewport(0, 0, Size.X, Size.Y);
-			GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 			GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, FramebufferHandle.Zero);
 			GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
 			GL.BlitFramebuffer(0, 0, Size.X, Size.Y, 0, 0, Size.X, Size.Y, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);

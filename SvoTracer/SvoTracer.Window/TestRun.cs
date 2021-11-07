@@ -8,7 +8,13 @@ namespace SvoTracer
 {
 	public class TestRun
 	{
-		public void Run(ITreeBuilder treeBuilder, ITreeManager treeManager)
+		private readonly Octree _tree;
+
+		public TestRun(Octree tree)
+		{
+			_tree = tree;
+		}
+		public void Run()
 		{
 			var input = new TraceInputData(
 				new OpenTK.Mathematics.Vector3(0.5f, 0.5f, -2f),
@@ -24,16 +30,13 @@ namespace SvoTracer
 
 			try
 			{
-				if (!treeManager.TreeExists("test"))
-					treeManager.SaveTree("test", treeBuilder.BuildTree(5, 7, uint.MaxValue / 64));
-				var tree = treeManager.LoadTree("test");
-				var usage = new Usage[tree.BlockCount >> 3];
-				var baseStart = TreeBuilder.PowSum((byte)(tree.N - 1));
-				var range = TreeBuilder.PowSum(tree.N) << 3;
+				var usage = new Usage[_tree.BlockCount >> 3];
+				var baseStart = TreeBuilder.PowSum((byte)(_tree.N - 1));
+				var range = TreeBuilder.PowSum(_tree.N) << 3;
 				//This iterates over the N+1 level
 				for (int i = 0; i < range; i++)
 				{
-					if ((tree.BaseBlocks[baseStart + (i >> 3)] >> ((i & 7) * 2) & 3) != 3)
+					if ((_tree.BaseBlocks[baseStart + (i >> 3)] >> ((i & 7) * 2) & 3) != 3)
 						break;
 					usage[i].Tick = ushort.MaxValue;
 					usage[i].Parent = uint.MaxValue;
@@ -47,7 +50,7 @@ namespace SvoTracer
 						{
 							KernelMirror.x = i;
 							KernelMirror.y = j;
-							KernelMirror.VoxelTrace(tree.BaseBlocks, tree.Blocks, usage, ref childRequestId, childRequests, $"Success for {j} {i}: ", input);
+							KernelMirror.VoxelTrace(_tree.BaseBlocks, _tree.Blocks, usage, ref childRequestId, childRequests, $"Success for {j} {i}: ", input);
 						}
 						catch (Exception e)
 						{

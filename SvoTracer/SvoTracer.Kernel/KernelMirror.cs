@@ -57,7 +57,7 @@ namespace SvoTracer.Kernel
 			return native_divide((float)x, (float)ulong.MaxValue);
 		}
 
-		static void GetSemaphor(ref int semaphor)
+		static void getSemaphor(ref int semaphor)
 		{
 			int occupied = atomic_xchg(ref semaphor, 1);
 			while (occupied > 0)
@@ -66,7 +66,7 @@ namespace SvoTracer.Kernel
 			}
 		}
 
-		static void ReleaseSemaphor(ref int semaphor)
+		static void releaseSemaphor(ref int semaphor)
 		{
 			int prevVal = atomic_xchg(ref semaphor, 0);
 		}
@@ -101,6 +101,13 @@ namespace SvoTracer.Kernel
 				((location.Z >> (64 - depth - 1) & 1) << 2));
 		}
 
+		/// <summary>
+		/// Deduces array offset of a base's location given its depth
+		/// Bases are stored as a dense octree down to depth N
+		/// </summary>
+		/// <param name="depth"></param>
+		/// <param name="location"></param>
+		/// <returns></returns>
 		static uint baseLocation(byte depth, ref Location location)
 		{
 			uint output = 0;
@@ -126,9 +133,14 @@ namespace SvoTracer.Kernel
 				return eye;
 		}
 
-		static float coneLevel(ref WorkingData _data)
+		/// <summary>
+		/// Determine the maximum tree depth for a cone at this location
+		/// </summary>
+		/// <param name="_data"></param>
+		/// <returns></returns>
+		static void setConeDepth(ref WorkingData _data)
 		{
-			return -(float)Math.Log(coneSize(Math.Abs(new Vector3(_data.Origin.X - uLongToFloat(_data.Location.X),
+			_data.ConeDepth =  -(float)Math.Log(coneSize(Math.Abs(new Vector3(_data.Origin.X - uLongToFloat(_data.Location.X),
 				_data.Origin.Y - uLongToFloat(_data.Location.Y),
 				_data.Origin.Z - uLongToFloat(_data.Location.Z)).Length), ref _data), 2);
 		}
@@ -150,20 +162,33 @@ namespace SvoTracer.Kernel
 			Console.Write(_data.ColourR + _data.ColourG + _data.ColourB > 0 ? 1 : 0);
 		}
 
-		static bool saveVoxelTrace(BlockData data, ref WorkingData _data)
+		/// <summary>
+		/// Combine _data colour + opacity with block data
+		/// </summary>
+		/// <param name="block"></param>
+		/// <param name="_data"></param>
+		/// <returns>Whether max opacity has been reached</returns>
+		static bool saveVoxelTrace(BlockData block, ref WorkingData _data)
 		{
-			if (_data.Opacity < _data.MaxOpacity)
-			{
-				_data.ColourR = native_divide(data.ColourR, 255.0f);
-				_data.ColourG = native_divide(data.ColourB, 255.0f);
-				_data.ColourB = native_divide(data.ColourG, 255.0f);
-
-				_data.Opacity = (byte)((int)_data.Opacity + (int)data.Opacity);
-			}
-			return true;
+			_data.ColourR = native_divide(block.ColourR, 255.0f);
+			_data.ColourG = native_divide(block.ColourB, 255.0f);
+			_data.ColourB = native_divide(block.ColourG, 255.0f);
+			_data.Opacity = (byte)((int)_data.Opacity + block.Opacity);
+			return _data.Opacity >= _data.MaxOpacity;
 		}
 
-		static BlockData average(uint address, Block[] blocks, float C, ref WorkingData _data)
+		/// <summary>
+		/// Combine _data colour + opacity with background colour and write to output
+		/// </summary>
+		/// <param name="image"></param>
+		/// <param name="_data"></param>
+		static void writeBackgroundData(string image, ref WorkingData _data)
+		{
+			saveVoxelTrace(background(ref _data), ref _data);
+			writeData(image, ref _data);
+		}
+
+		static BlockData average(uint address, Block[] blocks, ref WorkingData _data)
 		{
 			//Average like heck            
 			return blocks[address].Data;
@@ -258,6 +283,7 @@ namespace SvoTracer.Kernel
 			else
 				_data.Location.Z = _data.Location.Z - dz;
 
+			setConeDepth(ref _data);
 
 			if (_data.DirectionSignX && _data.Location.X == 0)
 			{
@@ -926,13 +952,13 @@ namespace SvoTracer.Kernel
 							 ushort tick)
 		{
 			// All local threads get to play the dereferencing game
-			GetSemaphor(ref semaphor);
+			getSemaphor(ref semaphor);
 			int localRemaining = atomic_dec(ref dereferenceRemaining);
 			uint2 address2 = new();
 			while (localRemaining >= 0)
 			{
 				address2 = dereferenceQueue[localRemaining];
-				ReleaseSemaphor(ref semaphor);
+				releaseSemaphor(ref semaphor);
 				// if Tick is ushort.Max - 1 then it has multiple parents
 				if (usage[address2.y >> 3].Tick == ushort.MaxValue - 1)
 				{
@@ -1006,16 +1032,16 @@ namespace SvoTracer.Kernel
 					if (childAddress != uint.MaxValue &&
 						usage[childAddress >> 3].Tick < ushort.MaxValue)
 					{
-						GetSemaphor(ref semaphor);
+						getSemaphor(ref semaphor);
 						localRemaining = atomic_inc(ref dereferenceRemaining);
 						dereferenceQueue[localRemaining] = new uint2(address2.y, childAddress);
-						ReleaseSemaphor(ref semaphor);
+						releaseSemaphor(ref semaphor);
 					}
 				}
-				GetSemaphor(ref semaphor);
+				getSemaphor(ref semaphor);
 				localRemaining = atomic_dec(ref dereferenceRemaining);
 			}
-			ReleaseSemaphor(ref semaphor);
+			releaseSemaphor(ref semaphor);
 		}
 
 		static void dereference(Block[] blocks, Usage[] usage,
@@ -1035,10 +1061,10 @@ namespace SvoTracer.Kernel
 						usage[childAddress >> 3].Tick < ushort.MaxValue)
 					{
 						// Semaphors are used to prevent dereferenceQueue being overwritten
-						GetSemaphor(ref semaphor);
+						getSemaphor(ref semaphor);
 						localRemaining = atomic_inc(ref dereferenceRemaining);
 						dereferenceQueue[localRemaining] = new uint2(address, childAddress);
-						ReleaseSemaphor(ref semaphor);
+						releaseSemaphor(ref semaphor);
 					}
 				}
 			helpDereference(blocks, usage, parentSize, parentResidency, parents,
@@ -1289,119 +1315,140 @@ namespace SvoTracer.Kernel
 						 TraceInputData _input)
 		{
 			byte depth = 1;
-			bool inside = true;
 			byte chunkPosition;
-			float C = -1;
 			uint offset;
-			uint address = 0;
+			uint address;
 			uint x = get_global_id(0);
 			uint y = get_global_id(1);
 			Vector2i coord = new Vector2i((int)x, (int)y);
+			// Used to navigate back up the tree
 			uint[] depthHeap = new uint[64];
-			byte baseChunk = 0;
+			byte baseChunkPosition;
 			WorkingData _data = setup(coord, ref _input);
 
 			depthHeap[_data.N + 1] = uint.MaxValue;
-			if (startTrace(ref _data))
+			if (!startTrace(ref _data))
 			{
-				while (depth > 0 && !leaving(ref _data))
+				writeBackgroundData(outputImage, ref _data);
+				return;
+			}
+
+			while (depth > 0)
+			{
+				bool baseLoop = true;
+				while (baseLoop)
 				{
-					inside = true;
-					while (inside && !leaving(ref _data))
+					// determine current base and chunk location
+					chunkPosition = chunk(depth, ref _data.Location);
+					offset = powSum((byte)(depth - 1));
+					address = baseLocation(depth, ref _data.Location);
+
+					// check base chunks to see if current location contains an interface
+					if ((bases[offset + address] >> (chunkPosition * 2) & 2) == 2)
 					{
-						chunkPosition = chunk(depth, ref _data.Location);
-						offset = powSum((byte)(depth - 1));
-						address = baseLocation(depth, ref _data.Location);
-						if ((bases[offset + address] >> (chunkPosition * 2) & 2) == 2)
+						if (depth < _data.N)
+							// still traversing base chunks
+							depth++;
+						else
 						{
+							// now traversing blocks
 							if (depth == _data.N)
-							{
 								depth += 2;
-								depthHeap[depth] = baseLocation(depth, ref _data.Location);
-								baseChunk = chunkPosition;
-								while (depth > (_data.N + 1) && !leaving(ref _data))
+
+							depthHeap[depth] = baseLocation(depth, ref _data.Location);
+							baseChunkPosition = chunkPosition;
+
+							while (depth > (_data.N + 1))
+							{
+								// Update usage
+								uint usageAddress = depthHeap[depth] >> 3;
+								if (usage[usageAddress].Tick < ushort.MaxValue - 1)
+									usage[usageAddress].Tick = _data.Tick;
+
+								// Loop over a block and its children
+								bool blockLoop = true;
+								while (blockLoop)
 								{
-									C = -1;
-									// Update usage
-									uint usageAddress = depthHeap[depth];
-									usageAddress = usageAddress >> 3;
-									if (usage[usageAddress].Tick < ushort.MaxValue - 1)
-										usage[usageAddress].Tick = _data.Tick;
+									chunkPosition = chunk(depth, ref _data.Location);
+									uint localAddress = depthHeap[depth];
 
-									inside = true;
-									while (inside && !leaving(ref _data))
+									if ((blocks[localAddress].Chunk >> (chunkPosition * 2) & 2) == 2)
 									{
-										chunkPosition = chunk(depth, ref _data.Location);
-										uint localAddress = depthHeap[depth];
+										depthHeap[depth + 1] = blocks[localAddress].Child + chunkPosition;
 
-										if ((blocks[localAddress].Chunk >> (chunkPosition * 2) & 2) == 2)
+										// C value is too diffuse to use
+										if (_data.ConeDepth < (_data.N + 2))
 										{
-											if (C == -1)
-												C = coneLevel(ref _data);
-
-											depthHeap[depth + 1] =
-												blocks[localAddress].Child + chunkPosition;
-											// C value is too diffuse to use
-											if (C < (_data.N + 2))
+											depth = (byte)(_data.N + 2);
+											if (saveVoxelTrace(average(localAddress, blocks, ref _data), ref _data))
 											{
-												depth = (byte)(_data.N + 2);
-												if (saveVoxelTrace(average(localAddress, blocks, C, ref _data), ref _data))
-												{
-													writeData(outputImage, ref _data);
-													return;
-												}
-											}
-											// C value requires me to go up a level
-											else if (C < depth)
-												inside = false;
-											// No additional data could be found at child depth
-											else if (blocks[localAddress].Child == uint.MaxValue)
-											{
-												requestChild(localAddress, depth, ref childRequestId,
-															 childRequests, _data.MaxChildRequestId,
-															 _data.Tick, 1, _data.Location);
-												if (saveVoxelTrace(blocks[localAddress].Data, ref _data))
-												{
-													writeData(outputImage, ref _data);
-													return;
-												}
-											}
-											// Navigate to child
-											else if (C > (depth + 1))
-												depth++;
-											// Resolve the colour of this voxel
-											else if (depth <= C && C <= (depth + 1))
-											{
-												if (saveVoxelTrace(blocks[localAddress].Data, ref _data))
-												{
-													writeData(outputImage, ref _data);
-													return;
-												}
+												writeData(outputImage, ref _data);
+												return;
 											}
 										}
-										else
-											inside = traverseChunk(depth, chunkPosition, ref _data);
+										// C value requires me to go up a level
+										else if (_data.ConeDepth < depth)
+											break;
+										// No additional data could be found at child depth
+										else if (blocks[localAddress].Child == uint.MaxValue)
+										{
+											requestChild(localAddress, depth, ref childRequestId,
+														 childRequests, _data.MaxChildRequestId,
+														 _data.Tick, 1, _data.Location);
+											if (saveVoxelTrace(blocks[localAddress].Data, ref _data))
+											{
+												writeData(outputImage, ref _data);
+												return;
+											}
+										}
+										// Navigate to child
+										else if (_data.ConeDepth > (depth + 1))
+											depth++;
+										// Resolve the colour of this voxel
+										else if (depth <= _data.ConeDepth && _data.ConeDepth <= (depth + 1))
+										{
+											if (saveVoxelTrace(blocks[localAddress].Data, ref _data))
+											{
+												writeData(outputImage, ref _data);
+												return;
+											}
+										}
 									}
-									if (depth == (_data.N + 2) && baseChunk == chunk((byte)(_data.N + 1), ref _data.Location))
-										depthHeap[depth] = baseLocation(depth, ref _data.Location);
 									else
-										depth--;
-									chunkPosition = chunk(depth, ref _data.Location);
+									{
+										blockLoop = traverseChunk(depth, chunkPosition, ref _data);
+										if (leaving(ref _data))
+										{
+											writeBackgroundData(outputImage, ref _data);
+											return;
+										}
+									}
 								}
-								depth = _data.N;
+
+								if (depth == (_data.N + 2) && baseChunkPosition == chunk((byte)(_data.N + 1), ref _data.Location)) // don't like this basechunk check
+									depthHeap[depth] = baseLocation(depth, ref _data.Location);
+								else
+									depth--;
 							}
-							else
-								depth++;
+							depth = _data.N;
 						}
-						else
-							inside = traverseChunk(depth, chunkPosition, ref _data);
+
 					}
-					if (depth != 1)
-						depth--;
+					else
+					{
+						baseLoop = traverseChunk(depth, chunkPosition, ref _data);
+						if (leaving(ref _data))
+						{
+							writeBackgroundData(outputImage, ref _data);
+							return;
+						}
+					}
 				}
+				if (depth != 1)
+					depth--;
 			}
-			saveVoxelTrace(background(ref _data), ref _data);
-			writeData(outputImage, ref _data);
+
+			writeBackgroundData(outputImage, ref _data);
 		}
 
 		/// <summary>

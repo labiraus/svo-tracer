@@ -121,6 +121,7 @@ typedef struct {
   bool DirectionSignZ;
   ushort Tick;
   uint MaxChildRequestId;
+  float ConeDepth;
 } WorkingData;
 
 // Converts a float between 0 and 1 into a ulong coordinate
@@ -133,28 +134,22 @@ ulong floatToULong(float x) {
     return (ulong)(fabs(x) * ULONG_MAX);
 }
 
-float uLongToFloat(ulong x) {
-  return native_divide((float)x, (float)ULONG_MAX);
-}
+float uLongToFloat(ulong x) { return native_divide((float)x, (float)ULONG_MAX); }
 
-void GetSemaphor(global int *semaphor) {
+void getSemaphor(global int *semaphor) {
   int occupied = atomic_xchg(semaphor, 1);
   while (occupied > 0) {
     occupied = atomic_xchg(semaphor, 1);
   }
 }
 
-void ReleaseSemaphor(global int *semaphor) {
-  int prevVal = atomic_xchg(semaphor, 0);
-}
+void releaseSemaphor(global int *semaphor) { int prevVal = atomic_xchg(semaphor, 0); }
 
 ulong roundUlong(ulong value, uchar depth, bool roundUp) {
   if (roundUp)
-    return ((value & (ULONG_MAX - (ULONG_MAX >> depth + 1))) +
-            (ULONG_MAX - (ULONG_MAX >> 1) >> depth)) -
-           value;
+    return ((value & (ULONG_MAX - (ULONG_MAX >> (depth + 1)))) + ((ULONG_MAX - (ULONG_MAX >> 1)) >> depth)) - value;
 
-  ulong output = value - ((value & (ULONG_MAX - (ULONG_MAX >> depth + 1))) - 1);
+  ulong output = value - ((value & (ULONG_MAX - (ULONG_MAX >> (depth + 1)))) - 1);
 
   if (output >= value)
     return value;
@@ -170,11 +165,12 @@ uint powSum(uchar depth) {
 }
 
 uchar chunk(uchar depth, ulong3 location) {
-  return ((location.x >> (64 - depth - 1) & 1) +
-          ((location.y >> (64 - depth - 1) & 1) << 1) +
+  return ((location.x >> (64 - depth - 1) & 1) + ((location.y >> (64 - depth - 1) & 1) << 1) +
           ((location.z >> (64 - depth - 1) & 1) << 2));
 }
 
+// Deduces array offset of a base's location given its depth
+// Bases are stored as a dense octree down to depth N
 uint baseLocation(uchar depth, ulong3 location) {
   uint output = 0;
   for (uchar i = 0; i < depth; i++)
@@ -194,14 +190,14 @@ float coneSize(float m, WorkingData *_data) {
     return eye;
 }
 
-float coneLevel(WorkingData *_data) {
-  float cone =
-      coneSize(fabs(fast_length((
-                   float3)(_data->Origin.x - uLongToFloat(_data->Location.x),
-                           _data->Origin.y - uLongToFloat(_data->Location.y),
-                           _data->Origin.z - uLongToFloat(_data->Location.z)))),
-               _data);
-  return -half_log2(cone);
+// Determine the maximum tree depth for a cone at this location
+void setConeDepth(WorkingData *_data) {
+  float cone = coneSize(fabs(fast_length((float3)(_data->Origin.x - uLongToFloat(_data->Location.x),
+                                                  _data->Origin.y - uLongToFloat(_data->Location.y),
+                                                  _data->Origin.z - uLongToFloat(_data->Location.z)))),
+                        _data);
+  _data->ConeDepth = -half_log2(cone);
+  _data->ConeDepth = 20;
 }
 
 BlockData background(WorkingData *_data) {
@@ -214,29 +210,34 @@ BlockData background(WorkingData *_data) {
 }
 
 void writeData(__write_only image2d_t outputImage, WorkingData *_data) {
-  write_imagef(outputImage, _data->Coord, (float4)(_data->ColourR, _data->ColourB, _data->ColourG, 1));
+  write_imagef(outputImage, _data->Coord, (float4)(_data->ColourR, _data->ColourG, _data->ColourB, 1));
 }
 
-bool saveVoxelTrace(BlockData data, WorkingData *_data) {
+// Combine _data colour+opacity with background colour
+bool saveVoxelTrace(BlockData blockData, WorkingData *_data) {
   if (_data->Opacity < _data->MaxOpacity) {
-    _data->ColourR = native_divide(data.ColourR, 255.0);
-    _data->ColourB = native_divide(data.ColourB, 255.0);
-    _data->ColourG = native_divide(data.ColourG, 255.0);
+    _data->ColourR = native_divide(blockData.ColourR, 255.0);
+    _data->ColourB = native_divide(blockData.ColourB, 255.0);
+    _data->ColourG = native_divide(blockData.ColourG, 255.0);
 
-    _data->Opacity = _data->Opacity + data.Opacity;
+    _data->Opacity = _data->Opacity + blockData.Opacity;
   }
   return true;
 }
 
-BlockData average(uint address, global Block *blocks, float C,
-                  WorkingData *_data) {
+// Combine _data colour+opacity with background colour and write to output
+void writeBackgroundData(__write_only image2d_t outputImage, WorkingData *_data) {
+  saveVoxelTrace(background(_data), _data);
+  writeData(outputImage, _data);
+}
+
+BlockData average(uint address, global Block *blocks, WorkingData *_data) {
   // Average like heck
   return blocks[address].Data;
 }
 
-void requestChild(uint address, uchar depth, global uint *childRequestId,
-                  global ChildRequest *childRequests, uint maxChildRequestId,
-                  ushort tick, uchar treeSize, ulong3 location) {
+void requestChild(uint address, uchar depth, global uint *childRequestId, global ChildRequest *childRequests,
+                  uint maxChildRequestId, ushort tick, uchar treeSize, ulong3 location) {
   uint currentId = atomic_inc(childRequestId);
   if (currentId >= maxChildRequestId)
     return;
@@ -251,9 +252,9 @@ void requestChild(uint address, uchar depth, global uint *childRequestId,
   childRequests[currentId] = request;
 }
 
+// Determines whether cone is leaving the octree
 bool leaving(WorkingData *_data) {
-  return (!_data->DirectionSignX && _data->Location.x == 0) ||
-         (!_data->DirectionSignY && _data->Location.y == 0) ||
+  return (!_data->DirectionSignX && _data->Location.x == 0) || (!_data->DirectionSignY && _data->Location.y == 0) ||
          (!_data->DirectionSignZ && _data->Location.z == 0) ||
          (_data->DirectionSignX && _data->Location.x == ULONG_MAX) ||
          (_data->DirectionSignY && _data->Location.y == ULONG_MAX) ||
@@ -276,24 +277,21 @@ uchar traverseChunk(uchar depth, uchar position, WorkingData *_data) {
     dy = floatToULong(_data->Direction.y * _data->InvDirection.x * udx);
     dz = floatToULong(_data->Direction.z * _data->InvDirection.x * udx);
 
-    if ((_data->DirectionSignX && (position & 1) == 1) ||
-        (!_data->DirectionSignX && (position & 1) == 0))
+    if ((_data->DirectionSignX && (position & 1) == 1) || (!_data->DirectionSignX && (position & 1) == 0))
       success = false;
   } else if (ay <= ax && ay <= az) {
     float udy = uLongToFloat(dy);
     dx = floatToULong(_data->Direction.x * _data->InvDirection.y * udy);
     dz = floatToULong(_data->Direction.z * _data->InvDirection.y * udy);
 
-    if ((_data->DirectionSignY && (position >> 1 & 1) == 1) ||
-        (!_data->DirectionSignY && (position >> 1 & 1) == 0))
+    if ((_data->DirectionSignY && (position >> 1 & 1) == 1) || (!_data->DirectionSignY && (position >> 1 & 1) == 0))
       success = false;
   } else {
     float udz = uLongToFloat(dz);
     dx = floatToULong(_data->Direction.x * _data->InvDirection.z * udz);
     dy = floatToULong(_data->Direction.y * _data->InvDirection.z * udz);
 
-    if ((_data->DirectionSignZ && (position >> 2 & 1) == 1) ||
-        (!_data->DirectionSignZ && (position >> 2 & 1) == 0))
+    if ((_data->DirectionSignZ && (position >> 2 & 1) == 1) || (!_data->DirectionSignZ && (position >> 2 & 1) == 0))
       success = false;
   }
 
@@ -311,6 +309,8 @@ uchar traverseChunk(uchar depth, uchar position, WorkingData *_data) {
     _data->Location.z = _data->Location.z + dz;
   else
     _data->Location.z = _data->Location.z - dz;
+
+  setConeDepth(_data);
 
   if (_data->DirectionSignX && _data->Location.x == 0) {
     _data->Location.x = ULONG_MAX;
@@ -356,8 +356,7 @@ bool startTrace(WorkingData *_data) {
   float mx = 0;
   float my = 0;
   float mz = 0;
-  int xyz = (x0 ? 32 : 0) + (x1 ? 16 : 0) + (y0 ? 8 : 0) + (y1 ? 4 : 0) +
-            (z0 ? 2 : 0) + (z1 ? 1 : 0);
+  int xyz = (x0 ? 32 : 0) + (x1 ? 16 : 0) + (y0 ? 8 : 0) + (y1 ? 4 : 0) + (z0 ? 2 : 0) + (z1 ? 1 : 0);
   if (xyz == 0) {
     _data->Location.x = floatToULong(location0);
     _data->Location.y = floatToULong(location1);
@@ -785,8 +784,8 @@ bool startTrace(WorkingData *_data) {
   _data->Location.y = floatToULong(location1);
   _data->Location.z = floatToULong(location2);
   float c = coneSize(m, _data);
-  return !(location0 < -c || location0 > 1 + c || location1 < -c ||
-           location1 > 1 + c || location2 < -c || location2 > 1 + c);
+  return !(location0 < -c || location0 > 1 + c || location1 < -c || location1 > 1 + c || location2 < -c ||
+           location2 > 1 + c);
 }
 
 WorkingData setup(int2 coord, TraceInputData _input) {
@@ -794,15 +793,11 @@ WorkingData setup(int2 coord, TraceInputData _input) {
   data.Coord = coord;
   data.ScreenSize = (int2)(_input.ScreenSize[0], _input.ScreenSize[1]);
   // Horizontal and vertical offset angles float h and v
-  float h = _input.FoV[0] *
-            native_divide((native_divide((float)_input.ScreenSize[0], 2) -
-                                         (float)coord.x),
-                          (float)_input.ScreenSize[0]);
-  float v = _input.FoV[1] *
-            native_divide((native_divide((float)_input.ScreenSize[1], 2) -
-                                         (float)coord.y),
-                          (float)_input.ScreenSize[1]);
-  
+  float h = _input.FoV[0] * native_divide((native_divide((float)_input.ScreenSize[0], 2) - (float)coord.x),
+                                          (float)_input.ScreenSize[0]);
+  float v = _input.FoV[1] * native_divide((native_divide((float)_input.ScreenSize[1], 2) - (float)coord.y),
+                                          (float)_input.ScreenSize[1]);
+
   // facing vector u, v, w
   float sinU = native_sin(_input.Facing[0]);
   float cosU = native_cos(_input.Facing[0]);
@@ -855,18 +850,15 @@ WorkingData setup(int2 coord, TraceInputData _input) {
   float pitch = -asin(CM31);
 
   // Unit vector of ray direction
-  float3 dir = (float3)(native_cos(yaw) * native_cos(pitch),
-                        native_sin(yaw) * native_cos(pitch), 
-                        native_sin(pitch));
+  float3 dir = (float3)(native_cos(yaw) * native_cos(pitch), native_sin(yaw) * native_cos(pitch), native_sin(pitch));
   float dirLength = length(dir);
   data.Direction.x = native_divide(dir.x, dirLength);
   data.Direction.y = native_divide(dir.y, dirLength);
   data.Direction.z = native_divide(dir.z, dirLength);
 
-  data.InvDirection = (float3)(native_divide(1, data.Direction.x),
-                               native_divide(1, data.Direction.y),
+  data.InvDirection = (float3)(native_divide(1, data.Direction.x), native_divide(1, data.Direction.y),
                                native_divide(1, data.Direction.z));
-                               
+
   data.DirectionSignX = data.Direction.x >= 0;
   data.DirectionSignY = data.Direction.y >= 0;
   data.DirectionSignZ = data.Direction.z >= 0;
@@ -884,18 +876,16 @@ WorkingData setup(int2 coord, TraceInputData _input) {
   return data;
 }
 
-void helpDereference(global Block *blocks, global Usage *usage,
-                     global uint *parentSize, global bool *parentResidency,
-                     global Parent *parents, global uint2 *dereferenceQueue,
-                     global int *dereferenceRemaining, global int *semaphor,
-                     ushort tick) {
+void helpDereference(global Block *blocks, global Usage *usage, global uint *parentSize, global bool *parentResidency,
+                     global Parent *parents, global uint2 *dereferenceQueue, global int *dereferenceRemaining,
+                     global int *semaphor, ushort tick) {
   // All local threads get to play the dereferencing game
-  GetSemaphor(semaphor);
+  getSemaphor(semaphor);
   int localRemaining = atomic_dec(dereferenceRemaining);
   uint2 address2;
   while (localRemaining >= 0) {
     address2 = dereferenceQueue[localRemaining];
-    ReleaseSemaphor(semaphor);
+    releaseSemaphor(semaphor);
     // if Tick is USHRT_MAX - 1 then it has multiple parents
     if (usage[address2.y >> 3].Tick == USHRT_MAX - 1) {
       uint parent = usage[address2.y >> 3].Parent;
@@ -908,8 +898,7 @@ void helpDereference(global Block *blocks, global Usage *usage,
           // While loop locks parents[parent].NextElement to this thread
           uint nextElement = UINT_MAX - 1;
           while (nextElement == UINT_MAX - 1) {
-            nextElement =
-                atomic_xchg(&parents[parent].NextElement, UINT_MAX - 1);
+            nextElement = atomic_xchg(&parents[parent].NextElement, UINT_MAX - 1);
           }
 
           // Last element in the list so previous element becomes the last
@@ -922,10 +911,8 @@ void helpDereference(global Block *blocks, global Usage *usage,
           }
           // Move next element forwards one
           else {
-            atomic_xchg(&parents[parent].ParentAddress,
-                        parents[nextElement].ParentAddress);
-            atomic_xchg(&parents[parent].NextElement,
-                        parents[nextElement].NextElement);
+            atomic_xchg(&parents[parent].ParentAddress, parents[nextElement].ParentAddress);
+            atomic_xchg(&parents[parent].NextElement, parents[nextElement].NextElement);
             parentResidency[nextElement] = false;
             last = parents[parent].NextElement == UINT_MAX;
           }
@@ -944,8 +931,7 @@ void helpDereference(global Block *blocks, global Usage *usage,
       if (first && last) {
         parentResidency[parent] = false;
         usage[address2.y >> 3].Tick = tick;
-        atomic_xchg(&usage[address2.y >> 3].Parent,
-                    parents[parent].ParentAddress);
+        atomic_xchg(&usage[address2.y >> 3].Parent, parents[parent].ParentAddress);
       }
     } else
       usage[address2.y >> 3].Tick = 0;
@@ -953,54 +939,45 @@ void helpDereference(global Block *blocks, global Usage *usage,
     // This creates additional children which could be spread amongst the loops
     for (uint i = 0; i < 8; i++) {
       uint childAddress = blocks[address2.y + i].Child;
-      if (childAddress != UINT_MAX &&
-          usage[childAddress >> 3].Tick < USHRT_MAX) {
-        GetSemaphor(semaphor);
+      if (childAddress != UINT_MAX && usage[childAddress >> 3].Tick < USHRT_MAX) {
+        getSemaphor(semaphor);
         localRemaining = atomic_inc(dereferenceRemaining);
         dereferenceQueue[localRemaining] = (uint2)(address2.y, childAddress);
-        ReleaseSemaphor(semaphor);
+        releaseSemaphor(semaphor);
       }
     }
-    GetSemaphor(semaphor);
+    getSemaphor(semaphor);
     localRemaining = atomic_dec(dereferenceRemaining);
   }
-  ReleaseSemaphor(semaphor);
+  releaseSemaphor(semaphor);
 }
 
-void dereference(global Block *blocks, global Usage *usage,
-                 global uint *parentSize, global bool *parentResidency,
-                 global Parent *parents, global uint2 *dereferenceQueue,
-                 global int *dereferenceRemaining, global int *semaphor,
-                 uint startAddress, ushort tick) {
+void dereference(global Block *blocks, global Usage *usage, global uint *parentSize, global bool *parentResidency,
+                 global Parent *parents, global uint2 *dereferenceQueue, global int *dereferenceRemaining,
+                 global int *semaphor, uint startAddress, ushort tick) {
   // Build up the initial set of children to cull
   uint address = atomic_xchg(&blocks[startAddress].Child, UINT_MAX);
   int localRemaining = 0;
   if (address != UINT_MAX)
     for (uint i = 0; i < 8; i++) {
       uint childAddress = blocks[address + i].Child;
-      if (childAddress != UINT_MAX &&
-          usage[childAddress >> 3].Tick < USHRT_MAX) {
+      if (childAddress != UINT_MAX && usage[childAddress >> 3].Tick < USHRT_MAX) {
         // Semaphors are used to prevent dereferenceQueue being overwritten
-        GetSemaphor(semaphor);
+        getSemaphor(semaphor);
         localRemaining = atomic_inc(dereferenceRemaining);
         dereferenceQueue[localRemaining] = (uint2)(address, childAddress);
-        ReleaseSemaphor(semaphor);
+        releaseSemaphor(semaphor);
       }
     }
-  helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                  dereferenceQueue, dereferenceRemaining, semaphor, tick);
+  helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining, semaphor,
+                  tick);
 }
 
-uint findAddress(global Block *blocks, global Usage *usage,
-                 global uint *childRequestId,
-                 global ChildRequest *childRequests, global uint *parentSize,
-                 global bool *parentResidency, global Parent *parents,
-                 global uint2 *dereferenceQueue,
-                 global int *dereferenceRemaining, global int *semaphor,
-                 global ulong *addresses, UpdateInputData inputData,
-                 uint address, uint depth) {
-  ulong3 location = (ulong3)(addresses[address], addresses[address + 1],
-                             addresses[address + 2]);
+uint findAddress(global Block *blocks, global Usage *usage, global uint *childRequestId,
+                 global ChildRequest *childRequests, global uint *parentSize, global bool *parentResidency,
+                 global Parent *parents, global uint2 *dereferenceQueue, global int *dereferenceRemaining,
+                 global int *semaphor, global ulong *addresses, UpdateInputData inputData, uint address, uint depth) {
+  ulong3 location = (ulong3)(addresses[address], addresses[address + 1], addresses[address + 2]);
   address = baseLocation(inputData.N + 2, location);
   for (uchar i = inputData.N + 2; i < depth; i++) {
     if (usage[address >> 3].Tick < USHRT_MAX - 1) {
@@ -1008,12 +985,10 @@ uint findAddress(global Block *blocks, global Usage *usage,
     }
     // Hit the bottom of the tree and not found it
     if (blocks[address].Child == UINT_MAX) {
-      requestChild(address, i, childRequestId, childRequests,
-                   inputData.MaxChildRequestId, inputData.Tick, depth - i,
+      requestChild(address, i, childRequestId, childRequests, inputData.MaxChildRequestId, inputData.Tick, depth - i,
                    location);
-      helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                      dereferenceQueue, dereferenceRemaining, semaphor,
-                      inputData.Tick);
+      helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining,
+                      semaphor, inputData.Tick);
       return UINT_MAX;
     }
     address = blocks[address].Child;
@@ -1024,13 +999,10 @@ uint findAddress(global Block *blocks, global Usage *usage,
 
 //*******************************KERNELS***********************************
 
-__kernel void prune(global ushort *bases, global Block *blocks,
-                    global Usage *usage, global uint *childRequestId,
-                    global ChildRequest *childRequests, global uint *parentSize,
-                    global bool *parentResidency, global Parent *parents,
-                    global uint2 *dereferenceQueue,
-                    global int *dereferenceRemaining, global int *semaphor,
-                    global Pruning *pruning, global BlockData *pruningBlockData,
+__kernel void prune(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId,
+                    global ChildRequest *childRequests, global uint *parentSize, global bool *parentResidency,
+                    global Parent *parents, global uint2 *dereferenceQueue, global int *dereferenceRemaining,
+                    global int *semaphor, global Pruning *pruning, global BlockData *pruningBlockData,
                     global ulong *pruningAddresses, UpdateInputData inputData) {
   uint x = get_global_id(0);
   Pruning myPruning = pruning[x];
@@ -1039,26 +1011,23 @@ __kernel void prune(global ushort *bases, global Block *blocks,
   // Update base block chunk data
   if ((myPruning.Properties >> 4 & 1) == 1) {
     bases[address] = myPruning.Chunk;
-    helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                    dereferenceQueue, dereferenceRemaining, semaphor,
-                    inputData.Tick);
+    helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining,
+                    semaphor, inputData.Tick);
     return;
   }
 
   // If depth is UCHAR_MAX then this is a reference to a specific value
   if (myPruning.Depth != UCHAR_MAX) {
-    address = findAddress(
-        blocks, usage, childRequestId, childRequests, parentSize,
-        parentResidency, parents, dereferenceQueue, dereferenceRemaining,
-        semaphor, pruningAddresses, inputData, address, myPruning.Depth);
+    address = findAddress(blocks, usage, childRequestId, childRequests, parentSize, parentResidency, parents,
+                          dereferenceQueue, dereferenceRemaining, semaphor, pruningAddresses, inputData, address,
+                          myPruning.Depth);
     if (address == UINT_MAX)
       return;
   } else {
     // Tick of 0 means that this has been dereferenced
     if (usage[address >> 3].Tick == 0) {
-      helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                      dereferenceQueue, dereferenceRemaining, semaphor,
-                      inputData.Tick);
+      helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining,
+                      semaphor, inputData.Tick);
       return;
     } else if (usage[address >> 3].Tick < USHRT_MAX - 1) {
       usage[address >> 3].Tick = inputData.Tick;
@@ -1067,14 +1036,12 @@ __kernel void prune(global ushort *bases, global Block *blocks,
 
   // CullChild
   if ((myPruning.Properties & 1) == 1) {
-    dereference(blocks, usage, parentSize, parentResidency, parents,
-                dereferenceQueue, dereferenceRemaining, semaphor, address,
-                inputData.Tick);
+    dereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining, semaphor,
+                address, inputData.Tick);
     blocks[address].Child = myPruning.ChildAddress;
   } else {
-    helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                    dereferenceQueue, dereferenceRemaining, semaphor,
-                    inputData.Tick);
+    helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining,
+                    semaphor, inputData.Tick);
   }
 
   // AlterViolability & MakeInviolate
@@ -1091,25 +1058,17 @@ __kernel void prune(global ushort *bases, global Block *blocks,
   }
 }
 
-__kernel void graft(global Block *blocks, global Usage *usage,
-                    global uint *childRequestId,
-                    global ChildRequest *childRequests, global uint *parentSize,
-                    global bool *parentResidency, global Parent *parents,
-                    global uint2 *dereferenceQueue,
-                    global int *dereferenceRemaining, global int *semaphor,
-                    global Grafting *grafting, global Block *graftingBlocks,
-                    global ulong *graftingAddresses,
-                    global uint *holdingAddresses, global uint *addressPosition,
+__kernel void graft(global Block *blocks, global Usage *usage, global uint *childRequestId,
+                    global ChildRequest *childRequests, global uint *parentSize, global bool *parentResidency,
+                    global Parent *parents, global uint2 *dereferenceQueue, global int *dereferenceRemaining,
+                    global int *semaphor, global Grafting *grafting, global Block *graftingBlocks,
+                    global ulong *graftingAddresses, global uint *holdingAddresses, global uint *addressPosition,
                     UpdateInputData inputData) {
   uint id = get_global_id(0);
   uint workSize = get_global_size(0);
-  uint iterator =
-      (uint)native_divide((float)workSize, (float)(id * inputData.MemorySize));
+  uint iterator = (uint)native_divide((float)workSize, (float)(id * inputData.MemorySize));
   uint baseIterator = iterator;
-  uint maxIterator =
-      (uint)native_divide((float)((id + 1) * inputData.MemorySize),
-                          (float)workSize) -
-      1;
+  uint maxIterator = (uint)native_divide((float)((id + 1) * inputData.MemorySize), (float)workSize) - 1;
   uint workingTick;
   uint offset = inputData.Offset;
   // Accumulate graft array
@@ -1118,21 +1077,17 @@ __kernel void graft(global Block *blocks, global Usage *usage,
     // Ensure that usage is not inviolable and is at least offset ticks ago
     if (workingTick == 0 ||
         (workingTick < USHRT_MAX - 1 &&
-         ((workingTick > inputData.Tick &&
-           (workingTick - USHRT_MAX - 2) < (inputData.Tick - offset)) ||
-          (workingTick < inputData.Tick &&
-           workingTick < (inputData.Tick - offset))))) {
+         ((workingTick > inputData.Tick && (workingTick - USHRT_MAX - 2) < (inputData.Tick - offset)) ||
+          (workingTick < inputData.Tick && workingTick < (inputData.Tick - offset))))) {
       uint myAddressPosition = atomic_inc(addressPosition);
       // Break out if address limit has already been reached
       if (myAddressPosition >= inputData.GraftSize) {
-        helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                        dereferenceQueue, dereferenceRemaining, semaphor,
-                        inputData.Tick);
+        helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining,
+                        semaphor, inputData.Tick);
         break;
       }
       holdingAddresses[myAddressPosition] = iterator;
-      dereference(blocks, usage, parentSize, parentResidency, parents,
-                  dereferenceQueue, dereferenceRemaining, semaphor,
+      dereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining, semaphor,
                   usage[myAddressPosition].Parent, inputData.Tick);
       // Ensure that the address isn't picked up on a second pass
       usage[myAddressPosition].Tick = inputData.Tick;
@@ -1143,32 +1098,27 @@ __kernel void graft(global Block *blocks, global Usage *usage,
       offset = offset >> 1;
     } else
       iterator++;
-    helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                    dereferenceQueue, dereferenceRemaining, semaphor,
-                    inputData.Tick);
+    helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining,
+                    semaphor, inputData.Tick);
   }
   Grafting myGrafting = grafting[id];
   uint address = myGrafting.GraftAddress;
   // Seek out true address if the grafting address is just a set of coordinates
   if (myGrafting.Depth != UCHAR_MAX) {
-    address = findAddress(
-        blocks, usage, childRequestId, childRequests, parentSize,
-        parentResidency, parents, dereferenceQueue, dereferenceRemaining,
-        semaphor, graftingAddresses, inputData, address, myGrafting.Depth);
+    address = findAddress(blocks, usage, childRequestId, childRequests, parentSize, parentResidency, parents,
+                          dereferenceQueue, dereferenceRemaining, semaphor, graftingAddresses, inputData, address,
+                          myGrafting.Depth);
     if (address == UINT_MAX)
       return;
     if (blocks[address].Child != UINT_MAX)
-      dereference(blocks, usage, parentSize, parentResidency, parents,
-                  dereferenceQueue, dereferenceRemaining, semaphor, address,
-                  inputData.Tick);
+      dereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining, semaphor,
+                  address, inputData.Tick);
     else
-      helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                      dereferenceQueue, dereferenceRemaining, semaphor,
-                      inputData.Tick);
+      helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining,
+                      semaphor, inputData.Tick);
   } else
-    helpDereference(blocks, usage, parentSize, parentResidency, parents,
-                    dereferenceQueue, dereferenceRemaining, semaphor,
-                    inputData.Tick);
+    helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining,
+                    semaphor, inputData.Tick);
 
   uint3 depthHeap[64];
   uint blockAddress = holdingAddresses[myGrafting.GraftDataAddress] << 3;
@@ -1201,118 +1151,132 @@ __kernel void graft(global Block *blocks, global Usage *usage,
   }
 }
 
-__kernel void traceVoxel(global ushort *bases, global Block *blocks,
-                         global Usage *usage, global uint *childRequestId,
-                         global ChildRequest *childRequests,
-                         __write_only image2d_t outputImage,
+__kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId,
+                         global ChildRequest *childRequests, __write_only image2d_t outputImage,
                          TraceInputData _input) {
   uchar depth = 1;
-  bool inside = true;
   uchar chunkPosition;
-  float C = -1;
   uint offset;
-  uint address = 0;
+  uint address;
   uint x = get_global_id(0);
   uint y = get_global_id(1);
   int2 coord = (int2)(x, y);
-  uint depthHeap[64];
-  uchar baseChunk = 0;
+  uchar baseChunk;
   WorkingData data = setup(coord, _input);
   WorkingData *_data = &data;
 
+  if (!startTrace(_data)) {
+    writeBackgroundData(outputImage, _data);
+    return;
+  }
+  setConeDepth(_data);
+
+  // Used to navigate back up the tree
+  uint depthHeap[64];
   depthHeap[_data->N + 1] = UINT_MAX;
-  if (startTrace(_data)) {
-    while (depth > 0 && !leaving(_data)) {
-      inside = true;
-      while (inside && !leaving(_data)) {
-        chunkPosition = chunk(depth, _data->Location);
-        offset = powSum(depth - 1);
-        address = baseLocation(depth, _data->Location);
-        if ((bases[offset + address] >> (chunkPosition * 2) & 2) == 2) {
-          if (depth == _data->N) {
+  while (depth > 0) {
+    bool baseLoop = true;
+    while (baseLoop) {
+      // determine current base and chunk location
+      chunkPosition = chunk(depth, _data->Location);
+      offset = powSum(depth - 1);
+      address = baseLocation(depth, _data->Location);
+
+      // check base chunks to see if current location contains an interface
+      if ((bases[offset + address] >> (chunkPosition * 2) & 2) == 2) {
+        if (depth < _data->N) {
+          // Still traversing base chunks
+          depth++;
+        } else {
+          // Traversing blocks
+          if (depth == _data->N)
             depth += 2;
-            depthHeap[depth] = baseLocation(depth, _data->Location);
-            baseChunk = chunkPosition;
-            while (depth > (_data->N + 1) && !leaving(_data)) {
-              C = -1;
-              // Update usage
-              uint usageAddress = depthHeap[depth];
-              usageAddress = usageAddress >> 3;
-              if (usage[usageAddress].Tick < USHRT_MAX - 1) {
-                usage[usageAddress].Tick = _data->Tick;
-              }
-              inside = true;
-              while (inside && !leaving(_data)) {
-                chunkPosition = chunk(depth, _data->Location);
-                uint localAddress = depthHeap[depth];
 
-                if ((blocks[localAddress].Chunk >> (chunkPosition * 2) & 2) == 2) {
-                  if (C == -1)
-                    C = coneLevel(_data);
+          depthHeap[depth] = baseLocation(depth, _data->Location);
+          baseChunk = chunkPosition;
 
-                  depthHeap[depth + 1] =
-                      blocks[localAddress].Child + chunkPosition;
-                  // C value is too diffuse to use
-                  if (C < (_data->N + 2)) {
-                    depth = _data->N + 2;
-                    if (saveVoxelTrace(average(localAddress, blocks, C, _data),
-                                       _data)) {
-                      writeData(outputImage, _data);
-                      return;
-                    }
+          while (depth > (_data->N + 1) && !leaving(_data)) {
+            // Update usage
+            uint usageAddress = depthHeap[depth] >> 3;
+            if (usage[usageAddress].Tick < USHRT_MAX - 1)
+              usage[usageAddress].Tick = _data->Tick;
+
+            bool blockLoop = true;
+            while (blockLoop) {
+              chunkPosition = chunk(depth, _data->Location);
+              uint localAddress = depthHeap[depth];
+
+              // Check if current chunk contains geometry
+              if (((blocks[localAddress].Chunk >> (chunkPosition * 2)) & 2) == 2) {
+
+                depthHeap[depth + 1] = blocks[localAddress].Child + chunkPosition;
+                // C value is too diffuse to use
+                if (_data->ConeDepth < (_data->N + 2)) {
+                  depth = _data->N + 2;
+                  if (saveVoxelTrace(average(localAddress, blocks, _data), _data)) {
+                    writeData(outputImage, _data);
+                    return;
                   }
-                  // C value requires me to go up a level
-                  else if (C < depth) {
-                    inside = false;
+                }
+
+                // ConeDepth value requires me to go up a level
+                else if (_data->ConeDepth < depth) {
+                  break;
+                }
+
+                // No additional data could be found at child depth
+                else if (blocks[localAddress].Child == UINT_MAX) {
+                  requestChild(localAddress, depth, childRequestId, childRequests, _data->MaxChildRequestId,
+                               _data->Tick, 1, _data->Location);
+                  if (saveVoxelTrace(blocks[localAddress].Data, _data)) {
+                    writeData(outputImage, _data);
+                    return;
                   }
-                  // No additional data could be found at child depth
-                  else if (blocks[localAddress].Child == UINT_MAX) {
-                    requestChild(localAddress, depth, childRequestId,
-                                 childRequests, _data->MaxChildRequestId,
-                                 _data->Tick, 1, _data->Location);
-                    if (saveVoxelTrace(blocks[localAddress].Data, _data)) {
-                      writeData(outputImage, _data);
-                      return;
-                    }
+                }
+
+                // Navigate to child
+                else if (_data->ConeDepth > (depth + 1)) {
+                  depth++;
+                }
+
+                // Resolve the colour of this voxel
+                else if (depth <= _data->ConeDepth && _data->ConeDepth <= (depth + 1)) {
+                  if (saveVoxelTrace(blocks[localAddress].Data, _data)) {
+                    writeData(outputImage, _data);
+                    return;
                   }
-                  // Navigate to child
-                  else if (C > (depth + 1)) {
-                    depth++;
-                  }
-                  // Resolve the colour of this voxel
-                  else if (depth <= C && C <= (depth + 1)) {
-                    if (saveVoxelTrace(blocks[localAddress].Data, _data)) {
-                      writeData(outputImage, _data);
-                      return;
-                    }
-                  }
-                } else {
-                  inside = traverseChunk(depth, chunkPosition, _data);
                 }
               }
-              if (depth == (_data->N + 2) &&
-                  baseChunk == chunk(_data->N + 1, _data->Location)) {
-                depthHeap[depth] = baseLocation(depth, _data->Location);
-              } else {
-                depth--;
+
+              else {
+                blockLoop = traverseChunk(depth, chunkPosition, _data);
+                if (leaving(_data)) {
+                  writeBackgroundData(outputImage, _data);
+                  return;
+                }
               }
-              chunkPosition = chunk(depth, _data->Location);
             }
-            depth = _data->N;
-          } else {
-            depth++;
+
+            if (depth == (_data->N + 2) && baseChunk == chunk(_data->N + 1, _data->Location)) {
+              depthHeap[depth] = baseLocation(depth, _data->Location);
+            } else
+              depth--;
           }
-        } else {
-          inside = traverseChunk(depth, chunkPosition, _data);
+
+          depth = _data->N;
+        }
+      } else {
+        baseLoop = traverseChunk(depth, chunkPosition, _data);
+        if (leaving(_data)) {
+          writeBackgroundData(outputImage, _data);
+          return;
         }
       }
-      if (depth != 1) {
-        depth--;
-      }
     }
+    if (depth != 1)
+      depth--;
   }
-  saveVoxelTrace(background(_data), _data);
-  writeData(outputImage, _data);
+  writeBackgroundData(outputImage, _data);
 }
 
 __kernel void traceMesh() {}

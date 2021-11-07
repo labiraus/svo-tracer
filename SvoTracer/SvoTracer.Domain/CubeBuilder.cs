@@ -77,6 +77,29 @@ namespace SvoTracer.Domain
 			var zRange = CoordinateRange(coordinates[2], depth);
 			var normal = getNormal((xRange.Item1, xRange.Item3), (yRange.Item1, yRange.Item3), (zRange.Item1, zRange.Item3));
 			var colour = getColour((xRange.Item1, xRange.Item3), (yRange.Item1, yRange.Item3), (zRange.Item1, zRange.Item3));
+			Color c = Color.Black;
+			switch (depth)
+			{
+				case 5:
+					c = Color.Yellow;
+					break;
+				case 6:
+					c = Color.Red;
+					break;
+				case 7:
+					c = Color.Blue;
+					break;
+				case 8:
+					c = Color.Green;
+					break;
+				case 9:
+					c = Color.Purple;
+					break;
+				case 10:
+					c = Color.Orange;
+					break;
+			}
+			colour = new byte[] {c.R, c.B, c.G };
 			var block = new Block()
 			{
 				Chunk = BuildChunk(xRange, yRange, zRange),
@@ -121,7 +144,7 @@ namespace SvoTracer.Domain
 		{
 			var intersect = intersections(a, b, c);
 			var edge = ((int)intersect >> 5 & 1) + ((int)intersect >> 4 & 1) + ((int)intersect >> 3 & 1) + ((int)intersect >> 2 & 1) + ((int)intersect >> 1 & 1) + ((int)intersect & 1);
-			if (a.Item2 - a.Item1 < 0.005 && edge > 1)
+			if (a.Item2 - a.Item1 < 0.0005 && edge > 1)
 			{
 				int colour = Color.Black.ToArgb();
 				return new byte[] { (byte)(colour >> 24), (byte)(colour >> 16), (byte)(colour >> 8) };

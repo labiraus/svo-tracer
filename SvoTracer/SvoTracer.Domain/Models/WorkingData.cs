@@ -36,5 +36,6 @@ namespace SvoTracer.Domain.Models
 		public bool DirectionSignZ;
 		public ushort Tick;
 		public uint MaxChildRequestId;
+		public float ConeDepth;
 	}
 }

@@ -14,6 +14,12 @@ namespace SvoTracer.Domain
 			_path = path;
 		}
 
+		public void DeleteTree(string fileName)
+		{
+			File.Delete($"{_path}\\{fileName}.oct");
+
+		}
+
 		public bool TreeExists(string fileName)
 		{
 			return File.Exists($"{_path}\\{fileName}.oct");

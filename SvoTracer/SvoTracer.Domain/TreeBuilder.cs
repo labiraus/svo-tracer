@@ -184,15 +184,15 @@ namespace SvoTracer.Domain
 					coordinates[1] + ((i & 0b010) == 0b010 ? edge : 0),
 					coordinates[2] + ((i & 0b100) == 0b100 ? edge : 0));
 				var block = MakeBlock(newCoordinates, currentDepth);
-				tree.Blocks[address + i] = block;
-				if (tree.BlockCount < address + i) tree.BlockCount = address + i + 1;
-
+				
 				if (CanHaveChildren(block.Chunk) && currentDepth < maxDepth && freeAddresses.Any())
 				{
 					var newAddress = freeAddresses.Dequeue() << 3;
 					block.Child = newAddress;
 					BuildBlocks(ref tree, freeAddresses, newAddress, newCoordinates, (ushort)(currentDepth + 1), maxDepth);
 				}
+				tree.Blocks[address + i] = block;
+				if (tree.BlockCount < address + i) tree.BlockCount = address + i + 1;
 			}
 		}
 
@@ -210,7 +210,8 @@ namespace SvoTracer.Domain
 		/// <returns></returns>
 		protected ushort BuildChunk((float min, float midpoint, float max) x, (float min, float midpoint, float max) y, (float min, float midpoint, float max) z)
 		{
-			var chunk = (ushort)((ContainsAir((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 : 0)
+			var chunk = (ushort)(
+				  (ContainsAir((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 : 0)
 				+ (ContainsGeometry((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 1 : 0)
 				+ (ContainsAir((x.midpoint, x.max), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 2 : 0)
 				+ (ContainsGeometry((x.midpoint, x.max), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 3 : 0)
