@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Numerics;
+using OpenTK.Mathematics;
 using SvoTracer.Domain;
 using SvoTracer.Domain.Models;
 using SvoTracer.Kernel;
@@ -14,20 +14,8 @@ namespace SvoTracer
 		{
 			_tree = tree;
 		}
-		public void Run()
+		public void Run(TraceInputData input)
 		{
-			var input = new TraceInputData(
-				new OpenTK.Mathematics.Vector3(0.5f, 0.5f, -2f),
-				new OpenTK.Mathematics.Vector3(0, (float)Math.PI / 2f, 0),
-				new OpenTK.Mathematics.Vector2((float)Math.PI / 4f, (float)Math.PI / 4f),
-				new OpenTK.Mathematics.Vector2(0, 0.169f),
-				80,
-				80,
-				200,
-				5,
-				0,
-				6000);
-
 			try
 			{
 				var usage = new Usage[_tree.BlockCount >> 3];

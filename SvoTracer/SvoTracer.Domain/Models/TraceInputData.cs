@@ -8,7 +8,7 @@ namespace SvoTracer.Domain.Models
 	{
 		public TraceInputData(
 			Vector3 origin,
-			Vector3 facing,
+			Matrix3 facing,
 			Vector2 foV,
 			Vector2 doF,
 			int screenSizeX,
@@ -31,8 +31,8 @@ namespace SvoTracer.Domain.Models
 
 		//Position
 		public Vector3 Origin;
-		//Direction faced
-		public Vector3 Facing;
+		//Tait-Bryan angles of direction faced
+		public Matrix3 Facing;
 		//Horizonal/vertical FoV angle of the screen
 		public Vector2 FoV;
 		//Depth of field made up of focal depth(the angle of the forced depth) and focal point(how deep the minimum is)

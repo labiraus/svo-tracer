@@ -8,19 +8,19 @@ namespace SvoTracer.Domain
 {
 	public class CubeBuilder : TreeBuilder
 	{
-		(float, float) x0, y0, z0;
+		(float min, float max) x0, y0, z0;
 		Vector3 normal1;
-		(float, float) x1, y1, z1;
+		(float min, float max) x1, y1, z1;
 		Vector3 normal2;
-		(float, float) x2, y2, z2;
+		(float min, float max) x2, y2, z2;
 		Vector3 normal3;
-		(float, float) x3, y3, z3;
+		(float min, float max) x3, y3, z3;
 		Vector3 normal4;
-		(float, float) x4, y4, z4;
+		(float min, float max) x4, y4, z4;
 		Vector3 normal5;
-		(float, float) x5, y5, z5;
+		(float min, float max) x5, y5, z5;
 		Vector3 normal6;
-		(float, float) x6, y6, z6;
+		(float min, float max) x6, y6, z6;
 
 		public CubeBuilder(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 e, Vector3 f, Vector3 g, Vector3 h)
 		{
@@ -54,29 +54,21 @@ namespace SvoTracer.Domain
 			normal6 = Plane.CreateFromVertices(e, f, g).Normal;
 		}
 
-		protected override bool ContainsGeometry((float, float) a, (float, float) b, (float, float) c)
-		{
-			return a.Item1 <= x0.Item2 && a.Item2 >= x0.Item1 &&
-				b.Item1 <= y0.Item2 && b.Item2 >= y0.Item1 &&
-				c.Item1 <= z0.Item2 && c.Item2 >= z0.Item1;
-		}
+		protected override bool ContainsGeometry((float min, float max) x, (float min, float max) y, (float min, float max) z) =>
+				x.min <= x0.max && x.max >= x0.min &&
+				y.min <= y0.max && y.max >= y0.min &&
+				z.min <= z0.max && z.max >= z0.min;
 
-		protected override bool ContainsAir((float, float) a, (float, float) b, (float, float) c)
-		{
-			//Not full or a plane intersects the cube
-			return !(a.Item1 <= x0.Item2 && a.Item2 >= x0.Item1 &&
-				b.Item1 <= y0.Item2 && b.Item2 >= y0.Item1 &&
-				c.Item1 <= z0.Item2 && c.Item2 >= z0.Item1) ||
-				intersections(a, b, c) > 0;
-		}
+		protected override bool ContainsAir((float min, float max) x, (float min, float max) y, (float min, float max) z) =>
+			  !ContainsGeometry(x, y, z) || intersections(x, y, z) > 0;
 
 		protected override Block MakeBlock(Location coordinates, ushort depth)
 		{
 			var xRange = CoordinateRange(coordinates[0], depth);
 			var yRange = CoordinateRange(coordinates[1], depth);
 			var zRange = CoordinateRange(coordinates[2], depth);
-			var normal = getNormal((xRange.Item1, xRange.Item3), (yRange.Item1, yRange.Item3), (zRange.Item1, zRange.Item3));
-			var colour = getColour((xRange.Item1, xRange.Item3), (yRange.Item1, yRange.Item3), (zRange.Item1, zRange.Item3));
+			var normal = getNormal((xRange.min, xRange.max), (yRange.min, yRange.max), (zRange.min, zRange.max));
+			var colour = getColour((xRange.min, xRange.max), (yRange.min, yRange.max), (zRange.min, zRange.max));
 			Color c = Color.Black;
 			switch (depth)
 			{
@@ -99,15 +91,15 @@ namespace SvoTracer.Domain
 					c = Color.Orange;
 					break;
 			}
-			colour = new byte[] {c.R, c.B, c.G };
-			var block = new Block()
+			colour = new byte[] { c.R, c.B, c.G };
+			return new Block()
 			{
-				Chunk = BuildChunk(xRange, yRange, zRange),
+				Chunk = MakeChunk(coordinates, depth),
 				Child = uint.MaxValue,
 				Data = new BlockData()
 				{
-					NormalPitch = normal.Item1,
-					NormalYaw = normal.Item2,
+					NormalPitch = normal.pitch,
+					NormalYaw = normal.yaw,
 					ColourR = colour[0],
 					ColourB = colour[1],
 					ColourG = colour[2],
@@ -115,11 +107,9 @@ namespace SvoTracer.Domain
 					Properties = 0
 				}
 			};
-
-			return block;
 		}
 
-		private (short, short) getNormal((float, float) a, (float, float) b, (float, float) c)
+		private (short pitch, short yaw) getNormal((float, float) a, (float, float) b, (float, float) c)
 		{
 			var intersect = intersections(a, b, c);
 			switch (intersect)
@@ -149,38 +139,36 @@ namespace SvoTracer.Domain
 				int colour = Color.Black.ToArgb();
 				return new byte[] { (byte)(colour >> 24), (byte)(colour >> 16), (byte)(colour >> 8) };
 			}
-			else
-			{
-				return faceColour(intersect);
-			}
+
+			return faceColour(intersect);
 		}
 
-		private Face intersections((float, float) a, (float, float) b, (float, float) c)
+		private Face intersections((float min, float max) a, (float min, float max) b, (float min, float max) c)
 		{
 			int intersections = 0;
-			intersections += (a.Item1 <= x1.Item2 && a.Item2 >= x1.Item1 &&
-				b.Item1 <= y1.Item2 && b.Item2 >= y1.Item1 &&
-				c.Item1 <= z1.Item2 && c.Item2 >= z1.Item1) ? 1 : 0;
+			intersections += (a.min <= x1.max && a.max >= x1.min &&
+				b.min <= y1.max && b.max >= y1.min &&
+				c.min <= z1.max && c.max >= z1.min) ? 1 : 0;
 
-			intersections += (a.Item1 <= x2.Item2 && a.Item2 >= x2.Item1 &&
-				b.Item1 <= y2.Item2 && b.Item2 >= y2.Item1 &&
-				c.Item1 <= z2.Item2 && c.Item2 >= z2.Item1) ? 2 : 0;
+			intersections += (a.min <= x2.max && a.max >= x2.min &&
+				b.min <= y2.max && b.max >= y2.min &&
+				c.min <= z2.max && c.max >= z2.min) ? 2 : 0;
 
-			intersections += (a.Item1 <= x3.Item2 && a.Item2 >= x3.Item1 &&
-				b.Item1 <= y3.Item2 && b.Item2 >= y3.Item1 &&
-				c.Item1 <= z3.Item2 && c.Item2 >= z3.Item1) ? 4 : 0;
+			intersections += (a.min <= x3.max && a.max >= x3.min &&
+				b.min <= y3.max && b.max >= y3.min &&
+				c.min <= z3.max && c.max >= z3.min) ? 4 : 0;
 
-			intersections += (a.Item1 <= x4.Item2 && a.Item2 >= x4.Item1 &&
-				b.Item1 <= y4.Item2 && b.Item2 >= y4.Item1 &&
-				c.Item1 <= z4.Item2 && c.Item2 >= z4.Item1) ? 8 : 0;
+			intersections += (a.min <= x4.max && a.max >= x4.min &&
+				b.min <= y4.max && b.max >= y4.min &&
+				c.min <= z4.max && c.max >= z4.min) ? 8 : 0;
 
-			intersections += (a.Item1 <= x5.Item2 && a.Item2 >= x5.Item1 &&
-				b.Item1 <= y5.Item2 && b.Item2 >= y5.Item1 &&
-				c.Item1 <= z5.Item2 && c.Item2 >= z5.Item1) ? 16 : 0;
+			intersections += (a.min <= x5.max && a.max >= x5.min &&
+				b.min <= y5.max && b.max >= y5.min &&
+				c.min <= z5.max && c.max >= z5.min) ? 16 : 0;
 
-			intersections += (a.Item1 <= x6.Item2 && a.Item2 >= x6.Item1 &&
-				b.Item1 <= y6.Item2 && b.Item2 >= y6.Item1 &&
-				c.Item1 <= z6.Item2 && c.Item2 >= z6.Item1) ? 32 : 0;
+			intersections += (a.min <= x6.max && a.max >= x6.min &&
+				b.min <= y6.max && b.max >= y6.min &&
+				c.min <= z6.max && c.max >= z6.min) ? 32 : 0;
 			return (Face)intersections;
 		}
 

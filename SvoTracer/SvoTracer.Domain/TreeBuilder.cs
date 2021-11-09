@@ -22,7 +22,7 @@ namespace SvoTracer.Domain
 		/// <param name="b">y min/maximum</param>
 		/// <param name="c">z min/maximum</param>
 		/// <returns></returns>
-		protected abstract bool ContainsGeometry((float, float) a, (float, float) b, (float, float) c);
+		protected abstract bool ContainsGeometry((float min, float max) a, (float min, float max) b, (float min, float max) c);
 		/// <summary>
 		/// Determines whether the volume bounded within the x/y/z range contains empty air
 		/// </summary>
@@ -30,7 +30,7 @@ namespace SvoTracer.Domain
 		/// <param name="b">y min/maximum</param>
 		/// <param name="c">z min/maximum</param>
 		/// <returns></returns>
-		protected abstract bool ContainsAir((float, float) a, (float, float) b, (float, float) c);
+		protected abstract bool ContainsAir((float min, float max) a, (float min, float max) b, (float min, float max) c);
 		/// <summary>
 		/// Builds a Block for a set of binary coordinates
 		/// </summary>
@@ -159,7 +159,7 @@ namespace SvoTracer.Domain
 						{
 							ulong xcoord = IntToBinaryCoordinate(x, depth);
 							var address = PowSum((ushort)(depth - 1)) + Interleave(x, y, z);
-							tree.BaseBlocks[address] = MakeBaseChunk(new Location(xcoord, ycoord, zcoord), depth);
+							tree.BaseBlocks[address] = MakeChunk(new Location(xcoord, ycoord, zcoord), depth);
 						}
 					}
 				}
@@ -172,19 +172,18 @@ namespace SvoTracer.Domain
 		/// <param name="tree">Octree to insert into</param>
 		/// <param name="freeAddresses">Queue of unallocated addresses</param>
 		/// <param name="address"></param>
-		/// <param name="coordinates"></param>
+		/// <param name="location"></param>
 		/// <param name="currentDepth"></param>
-		protected void BuildBlocks(ref Octree tree, Queue<uint> freeAddresses, uint address, Location coordinates, ushort currentDepth, ushort maxDepth)
+		protected void BuildBlocks(ref Octree tree, Queue<uint> freeAddresses, uint address, Location location, ushort currentDepth, ushort maxDepth)
 		{
 			for (byte i = 0; i < 8; i++)
 			{
 				ulong edge = nearMax >> (currentDepth - 1);
 				var newCoordinates = new Location(
-					coordinates[0] + ((i & 0b001) == 0b001 ? edge : 0),
-					coordinates[1] + ((i & 0b010) == 0b010 ? edge : 0),
-					coordinates[2] + ((i & 0b100) == 0b100 ? edge : 0));
+					location[0] + ((i & 0b001) == 0b001 ? edge : 0),
+					location[1] + ((i & 0b010) == 0b010 ? edge : 0),
+					location[2] + ((i & 0b100) == 0b100 ? edge : 0));
 				var block = MakeBlock(newCoordinates, currentDepth);
-				
 				if (CanHaveChildren(block.Chunk) && currentDepth < maxDepth && freeAddresses.Any())
 				{
 					var newAddress = freeAddresses.Dequeue() << 3;
@@ -195,22 +194,18 @@ namespace SvoTracer.Domain
 				if (tree.BlockCount < address + i) tree.BlockCount = address + i + 1;
 			}
 		}
-
-		protected ushort MakeBaseChunk(Location coordinates, ushort depth)
-		{
-			return BuildChunk(CoordinateRange(coordinates[0], depth), CoordinateRange(coordinates[1], depth), CoordinateRange(coordinates[2], depth));
-		}
-
 		/// <summary>
 		/// Creates chunk data from coordinates
 		/// </summary>
-		/// <param name="x"></param>
-		/// <param name="y"></param>
-		/// <param name="z"></param>
+		/// <param name="coordinates"></param>
+		/// <param name="depth"></param>
 		/// <returns></returns>
-		protected ushort BuildChunk((float min, float midpoint, float max) x, (float min, float midpoint, float max) y, (float min, float midpoint, float max) z)
+		protected ushort MakeChunk(Location coordinates, ushort depth)
 		{
-			var chunk = (ushort)(
+			var x = CoordinateRange(coordinates[0], depth);
+			var y = CoordinateRange(coordinates[1], depth);
+			var z = CoordinateRange(coordinates[2], depth);
+			return (ushort)(
 				  (ContainsAir((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 : 0)
 				+ (ContainsGeometry((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 1 : 0)
 				+ (ContainsAir((x.midpoint, x.max), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 2 : 0)
@@ -227,7 +222,6 @@ namespace SvoTracer.Domain
 				+ (ContainsGeometry((x.min, x.midpoint), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 13 : 0)
 				+ (ContainsAir((x.midpoint, x.max), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 14 : 0)
 				+ (ContainsGeometry((x.midpoint, x.max), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 15 : 0));
-			return chunk;
 		}
 
 		/// <summary>
@@ -264,7 +258,7 @@ namespace SvoTracer.Domain
 			return output;
 		}
 
-		protected static (float, float, float) CoordinateRange(ulong binaryCoordinate, ushort depth)
+		protected static (float min, float midpoint, float max) CoordinateRange(ulong binaryCoordinate, ushort depth)
 		{
 			float start = 0, end = 1, division = 1;
 			for (ushort i = 0; i < depth; i++)
@@ -288,11 +282,11 @@ namespace SvoTracer.Domain
 		protected static uint Interleave(uint x, uint y, uint z)
 		{
 			uint output = 0;
-			for (int i = 0; x >= (uint)(1 << i) || y >= (uint)(1 << i) || z >= (uint)(1 << i); i++)
+			for (int depth = 0; x >= (uint)(1 << depth) || y >= (uint)(1 << depth) || z >= (uint)(1 << depth); depth++)
 			{
-				output += (x >> i & 1) << (i * 3);
-				output += (y >> i & 1) << ((i * 3) + 1);
-				output += (z >> i & 1) << ((i * 3) + 2);
+				output += (x >> depth & 1) << (depth * 3);
+				output += (y >> depth & 1) << ((depth * 3) + 1);
+				output += (z >> depth & 1) << ((depth * 3) + 2);
 			}
 			return output;
 		}

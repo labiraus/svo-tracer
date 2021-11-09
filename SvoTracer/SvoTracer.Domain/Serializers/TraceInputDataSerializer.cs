@@ -17,9 +17,15 @@ namespace SvoTracer.Domain.Serializers
 			writer.Write(data.Origin.X);
 			writer.Write(data.Origin.Y);
 			writer.Write(data.Origin.Z);
-			writer.Write(data.Facing.X);
-			writer.Write(data.Facing.Y);
-			writer.Write(data.Facing.Z);
+			writer.Write(data.Facing.M11);
+			writer.Write(data.Facing.M12);
+			writer.Write(data.Facing.M13);
+			writer.Write(data.Facing.M21);
+			writer.Write(data.Facing.M22);
+			writer.Write(data.Facing.M23);
+			writer.Write(data.Facing.M31);
+			writer.Write(data.Facing.M32);
+			writer.Write(data.Facing.M33);
 			writer.Write(data.FoV.X);
 			writer.Write(data.FoV.Y);
 			writer.Write(data.DoF.X);

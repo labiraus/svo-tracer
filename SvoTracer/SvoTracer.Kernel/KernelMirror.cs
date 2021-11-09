@@ -94,7 +94,7 @@ namespace SvoTracer.Kernel
 			return output;
 		}
 
-		static byte chunk(byte depth, ref Location location)
+		static byte chunkPosition(byte depth, Location location)
 		{
 			return (byte)((location.X >> (64 - depth - 1) & 1) +
 				((location.Y >> (64 - depth - 1) & 1) << 1) +
@@ -108,11 +108,11 @@ namespace SvoTracer.Kernel
 		/// <param name="depth"></param>
 		/// <param name="location"></param>
 		/// <returns></returns>
-		static uint baseLocation(byte depth, ref Location location)
+		static uint baseLocation(byte depth, Location location)
 		{
 			uint output = 0;
 			for (byte i = 0; i < depth; i++)
-				output = (output << 3) + chunk(i, ref location);
+				output = (output << 3) + chunkPosition(i, location);
 
 			return output;
 		}
@@ -222,6 +222,14 @@ namespace SvoTracer.Kernel
 				(_data.DirectionSignZ && _data.Location.Z == ulong.MaxValue);
 		}
 
+		static bool comparePositions(byte depth, byte position, ref WorkingData _data)
+		{
+			byte newPosition = chunkPosition(depth, _data.Location);
+			return ((position & 1) == (_data.DirectionSignX ? 1 : 0) && (newPosition & 1) != (_data.DirectionSignX ? 1 : 0)) ||
+				   (((position >> 1) & 1) == (_data.DirectionSignY ? 1 : 0) && ((newPosition >> 1) & 1) != (_data.DirectionSignY ? 1 : 0)) ||
+				   (((position >> 2) & 1) == (_data.DirectionSignZ ? 1 : 0) && ((newPosition >> 2) & 1) != (_data.DirectionSignZ ? 1 : 0));
+		}
+
 		/// <summary>
 		/// Moves to the nearest neighboring chunk along the Direction vector
 		/// </summary>
@@ -229,7 +237,7 @@ namespace SvoTracer.Kernel
 		/// <param name="depth"></param>
 		/// <param name="position"></param>
 		/// <returns>New chunk position or 8 for outside of block</returns>
-		static bool traverseChunk(byte depth, byte position, ref WorkingData _data)
+		static bool traverseChunk(byte depth, ref WorkingData _data)
 		{
 			ulong dx = roundUlong(_data.Location.X, depth, _data.DirectionSignX);
 			ulong dy = roundUlong(_data.Location.Y, depth, _data.DirectionSignY);
@@ -238,8 +246,8 @@ namespace SvoTracer.Kernel
 			float ax = Math.Abs(dx * _data.InvDirection.X);
 			float ay = Math.Abs(dy * _data.InvDirection.Y);
 			float az = Math.Abs(dz * _data.InvDirection.Z);
-			bool success = true;
-
+			bool remainInBlock = true;
+			byte position = chunkPosition(depth, _data.Location);
 			if (ax <= ay && ax <= az)
 			{
 				float udx = ulongToFloat(dx);
@@ -247,7 +255,7 @@ namespace SvoTracer.Kernel
 				dz = floatToULong(_data.Direction.Z * _data.InvDirection.X * udx);
 
 				if ((_data.DirectionSignX && (position & 1) == 1) || (!_data.DirectionSignX && (position & 1) == 0))
-					success = false;
+					remainInBlock = false;
 			}
 			else if (ay <= ax && ay <= az)
 			{
@@ -256,7 +264,7 @@ namespace SvoTracer.Kernel
 				dz = floatToULong(_data.Direction.Z * _data.InvDirection.Y * udy);
 
 				if ((_data.DirectionSignY && (position >> 1 & 1) == 1) || (!_data.DirectionSignY && (position >> 1 & 1) == 0))
-					success = false;
+					remainInBlock = false;
 			}
 			else
 			{
@@ -265,58 +273,59 @@ namespace SvoTracer.Kernel
 				dy = floatToULong(_data.Direction.Y * _data.InvDirection.Z * udz);
 
 				if ((_data.DirectionSignZ && (position >> 2 & 1) == 1) || (!_data.DirectionSignZ && (position >> 2 & 1) == 0))
-					success = false;
+					remainInBlock = false;
 			}
 
 			if (_data.DirectionSignX)
-				_data.Location.X = _data.Location.X + dx;
+				_data.Location.X += dx;
 			else
-				_data.Location.X = _data.Location.X - dx;
+				_data.Location.X -= dx;
 
 			if (_data.DirectionSignY)
-				_data.Location.Y = _data.Location.Y + dy;
+				_data.Location.Y += dy;
 			else
-				_data.Location.Y = _data.Location.Y - dy;
+				_data.Location.Y -= dy;
 
 			if (_data.DirectionSignZ)
-				_data.Location.Z = _data.Location.Z + dz;
+				_data.Location.Z += dz;
 			else
-				_data.Location.Z = _data.Location.Z - dz;
+				_data.Location.Z -= dz;
 
-			setConeDepth(ref _data);
-
+			// if trafersal has overflowed ulong then the octree has been left
 			if (_data.DirectionSignX && _data.Location.X == 0)
 			{
 				_data.Location.X = ulong.MaxValue;
-				return false;
+				remainInBlock = false;
 			}
 			else if (!_data.DirectionSignX && _data.Location.X == ulong.MaxValue)
 			{
 				_data.Location.X = 0;
-				return false;
+				remainInBlock = false;
 			}
-			else if (_data.DirectionSignY && _data.Location.Y == 0)
+			if (_data.DirectionSignY && _data.Location.Y == 0)
 			{
 				_data.Location.Y = ulong.MaxValue;
-				return false;
+				remainInBlock = false;
 			}
 			else if (!_data.DirectionSignY && _data.Location.Y == ulong.MaxValue)
 			{
 				_data.Location.Y = 0;
-				return false;
+				remainInBlock = false;
 			}
-			else if (_data.DirectionSignZ && _data.Location.Z == 0)
+			if (_data.DirectionSignZ && _data.Location.Z == 0)
 			{
 				_data.Location.Z = ulong.MaxValue;
-				return false;
+				remainInBlock = false;
 			}
 			else if (!_data.DirectionSignZ && _data.Location.Z == ulong.MaxValue)
 			{
 				_data.Location.Z = 0;
-				return false;
+				remainInBlock = false;
 			}
 
-			return success;
+			setConeDepth(ref _data);
+
+			return remainInBlock;
 		}
 
 		/// <summary>
@@ -873,66 +882,69 @@ namespace SvoTracer.Kernel
 			data.Coord = new Vector2i(coord[0], coord[1]);
 			data.ScreenSize = new Vector2i(_input.ScreenSize[0], _input.ScreenSize[1]);
 			//Horizontal and vertical offset angles float h and v
-			float h = _input.FoV[0] *
+			float x = _input.FoV[0] *
 					  native_divide((native_divide((float)_input.ScreenSize[0], 2) -
 													(float)coord.X),
 									(float)_input.ScreenSize[0]);
-			float v = _input.FoV[1] *
+			float y = _input.FoV[1] *
 					  native_divide((native_divide((float)_input.ScreenSize[1], 2) -
 													(float)coord.Y),
 									(float)_input.ScreenSize[1]);
+			//float su = (float)Math.Sin(_input.Facing.Z);
+			//float cu = (float)Math.Cos(_input.Facing.Z);
+			//float sv = (float)Math.Sin(_input.Facing.Y);
+			//float cv = (float)Math.Cos(_input.Facing.Y);
+			//float sw = (float)Math.Sin(_input.Facing.X);
+			//float cw = (float)Math.Cos(_input.Facing.X);
+			////float su2 = 0;
+			////float cu2 = 1;
+			//float sv2 = (float)Math.Sin(v);
+			//float cv2 = (float)Math.Cos(v);
+			//float sw2 = (float)Math.Sin(h);
+			//float cw2 = (float)Math.Cos(h);
 
-			float su = (float)Math.Sin(_input.Facing.Z);
-			float cu = (float)Math.Cos(_input.Facing.Z);
-			float sv = (float)Math.Sin(_input.Facing.Y);
-			float cv = (float)Math.Cos(_input.Facing.Y);
-			float sw = (float)Math.Sin(_input.Facing.X);
-			float cw = (float)Math.Cos(_input.Facing.X);
-			//float su2 = 0;
-			//float cu2 = 1;
-			float sv2 = (float)Math.Sin(v);
-			float cv2 = (float)Math.Cos(v);
-			float sw2 = (float)Math.Sin(h);
-			float cw2 = (float)Math.Cos(h);
+			//float AM11 = cv * cw;
+			//float AM12 = su * sv * cw - cu * sw;
+			//float AM13 = su * sw + cu * sv * cw;
+			//float AM21 = cv * sw;
+			//float AM22 = cu * cw + su * sv * sw;
+			//float AM23 = cu * sv * sw - su * cw;
+			//float AM31 = -sv;
+			//float AM32 = su * cv;
+			//float AM33 = cu * cv;
 
-			float AM11 = cv * cw;
-			float AM12 = su * sv * cw - cu * sw;
-			float AM13 = su * sw + cu * sv * cw;
-			float AM21 = cv * sw;
-			float AM22 = cu * cw + su * sv * sw;
-			float AM23 = cu * sv * sw - su * cw;
-			float AM31 = -sv;
-			float AM32 = su * cv;
-			float AM33 = cu * cv;
+			//float BM11 = cv2 * cw2;
+			////float BM12 = su2 * sv2 * cw2 - cu2 * sw2;
+			////float BM13 = su2 * sw2 + cu2 * sv2 * cw2;
+			//float BM21 = cv2 * sw2;
+			////float BM22 = cu2 * cw2 + su2 * sv2 * sw2;
+			////float BM23 = cu2 * sv2 * sw2 - su2 * cw2;
+			//float BM31 = -sv2;
+			////float BM32 = su2 * cv2;
+			////float BM33 = cu2 * cv2;
 
-			float BM11 = cv2 * cw2;
-			//float BM12 = su2 * sv2 * cw2 - cu2 * sw2;
-			//float BM13 = su2 * sw2 + cu2 * sv2 * cw2;
-			float BM21 = cv2 * sw2;
-			//float BM22 = cu2 * cw2 + su2 * sv2 * sw2;
-			//float BM23 = cu2 * sv2 * sw2 - su2 * cw2;
-			float BM31 = -sv2;
-			//float BM32 = su2 * cv2;
-			//float BM33 = cu2 * cv2;
+			//float CM11 = AM11 * BM11 + AM12 * BM21 + AM13 * BM31;
+			////float CM12 = AM11 * BM12 + AM12 * BM22 + AM13 * BM32;
+			////float CM13 = AM11 * BM13 + AM12 * BM23 + AM13 * BM33;
+			//float CM21 = AM21 * BM11 + AM22 * BM21 + AM23 * BM31;
+			////float CM22 = AM21 * BM12 + AM22 * BM22 + AM23 * BM32;
+			////float CM23 = AM21 * BM13 + AM22 * BM23 + AM23 * BM33;
+			//float CM31 = AM31 * BM11 + AM32 * BM21 + AM33 * BM31;
+			////float CM32 = AM31 * BM12 + AM32 * BM22 + AM33 * BM32;
+			////float CM33 = AM31 * BM13 + AM32 * BM23 + AM33 * BM33;
 
-			float CM11 = AM11 * BM11 + AM12 * BM21 + AM13 * BM31;
-			//float CM12 = AM11 * BM12 + AM12 * BM22 + AM13 * BM32;
-			//float CM13 = AM11 * BM13 + AM12 * BM23 + AM13 * BM33;
-			float CM21 = AM21 * BM11 + AM22 * BM21 + AM23 * BM31;
-			//float CM22 = AM21 * BM12 + AM22 * BM22 + AM23 * BM32;
-			//float CM23 = AM21 * BM13 + AM22 * BM23 + AM23 * BM33;
-			float CM31 = AM31 * BM11 + AM32 * BM21 + AM33 * BM31;
-			//float CM32 = AM31 * BM12 + AM32 * BM22 + AM33 * BM32;
-			//float CM33 = AM31 * BM13 + AM32 * BM23 + AM33 * BM33;
+			//float yaw = (float)Math.Atan2(CM21, CM11);
+			//float pitch = -(float)Math.Asin(CM31);
 
-			float yaw = (float)Math.Atan2(CM21, CM11);
-			float pitch = -(float)Math.Asin(CM31);
+			////Unit vector of direction float3 DIR
+			//data.Direction = new Vector3(
+			//	(float)Math.Cos(yaw) * (float)Math.Cos(pitch),
+			//	(float)Math.Sin(yaw) * (float)Math.Cos(pitch),
+			//	(float)Math.Sin(pitch));
 
-			//Unit vector of direction float3 DIR
-			data.Direction = new Vector3(
-				(float)Math.Cos(yaw) * (float)Math.Cos(pitch),
-				(float)Math.Sin(yaw) * (float)Math.Cos(pitch),
-				(float)Math.Sin(pitch));
+
+			var dir = Vector3.Transform(new Vector3(0, 0, 1), new Quaternion(x, y, 0));
+			data.Direction = Vector3.TransformRow(new Vector3(0, 0, 1), Matrix3.CreateRotationY(y) * Matrix3.CreateRotationX(x) * _input.Facing);
 
 			data.InvDirection = new Vector3(1 / data.Direction.X, 1 / data.Direction.Y, 1 / data.Direction.Z);
 			data.DirectionSignX = data.Direction.X >= 0;
@@ -1082,7 +1094,7 @@ namespace SvoTracer.Kernel
 		{
 			Location location = new Location(addresses[address], addresses[address + 1],
 									   addresses[address + 2]);
-			address = baseLocation((byte)(inputData.N + 2), ref location);
+			address = baseLocation((byte)(inputData.N + 2), location);
 			for (byte i = (byte)(inputData.N + 2); i < depth; i++)
 			{
 				if (usage[address >> 3].Tick < ushort.MaxValue - 1)
@@ -1101,7 +1113,7 @@ namespace SvoTracer.Kernel
 					return uint.MaxValue;
 				}
 				address = blocks[address].Child;
-				address += chunk(i, ref location);
+				address += chunkPosition(i, location);
 			}
 			return address;
 		}
@@ -1315,14 +1327,13 @@ namespace SvoTracer.Kernel
 						 TraceInputData _input)
 		{
 			byte depth = 1;
-			uint offset;
-			uint address;
+			byte previousChunkPosition;
+			uint localAddress;
 			uint x = get_global_id(0);
 			uint y = get_global_id(1);
 			Vector2i coord = new Vector2i((int)x, (int)y);
 			// Used to navigate back up the tree
 			uint[] depthHeap = new uint[64];
-			byte baseChunkPosition;
 			WorkingData _data = setup(coord, ref _input);
 
 			depthHeap[_data.N + 1] = uint.MaxValue;
@@ -1332,120 +1343,129 @@ namespace SvoTracer.Kernel
 				return;
 			}
 
-			while (depth > 0)
+			// iterate over base chunks
+			while (true)
 			{
-				bool baseLoop = true;
-				while (baseLoop)
+				// check if current base chunk contains geometry
+				localAddress = powSum((byte)(depth - 1)) + baseLocation(depth, _data.Location);
+				if (depth <= _data.N && (bases[localAddress] >> (chunkPosition(depth, _data.Location) * 2) & 2) != 2)
 				{
-					// determine current base and chunk location
-					offset = powSum((byte)(depth - 1));
-					address = baseLocation(depth, ref _data.Location);
-
-					// check base chunks to see if current location contains an interface
-					if ((bases[offset + address] >> (chunk(depth, ref _data.Location) * 2) & 2) == 2)
+					// current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
+					previousChunkPosition = chunkPosition((byte)(depth - 1), _data.Location);
+					if (!traverseChunk(depth, ref _data) && depth != 1)
 					{
-						if (depth < _data.N)
-							// still traversing base chunks
-							depth++;
-						else
+						depth--;
+						// check if traversal stepped out of parent chunk as well
+						if (depth != 1 && comparePositions(depth, previousChunkPosition, ref _data))
 						{
-							// now traversing blocks
-							if (depth == _data.N)
-							{
-								depth += 2;
-								depthHeap[_data.N + 2] = baseLocation((byte)(_data.N + 2), ref _data.Location);
-							}
-
-							while (depth > (_data.N + 1))
-							{
-								// Update usage
-								uint usageAddress = depthHeap[depth] >> 3;
-								if (usage[usageAddress].Tick < ushort.MaxValue - 1)
-									usage[usageAddress].Tick = _data.Tick;
-
-								// Loop over a block and its children
-								bool blockLoop = true;
-								while (blockLoop)
-								{
-									uint localAddress = depthHeap[depth];
-
-									if ((blocks[localAddress].Chunk >> (chunk(depth, ref _data.Location) * 2) & 2) == 2)
-									{
-										depthHeap[depth + 1] = blocks[localAddress].Child + chunk(depth, ref _data.Location);
-
-										// C value is too diffuse to use
-										if (_data.ConeDepth < (_data.N + 2))
-										{
-											depth = (byte)(_data.N + 2);
-											if (saveVoxelTrace(average(localAddress, blocks, ref _data), ref _data))
-											{
-												writeData(outputImage, ref _data);
-												return;
-											}
-										}
-
-										// C value requires me to go up a level
-										else if (_data.ConeDepth < depth)
-											break;
-
-										// No additional data could be found at child depth
-										else if (blocks[localAddress].Child == uint.MaxValue)
-										{
-											requestChild(localAddress, depth, ref childRequestId,
-														 childRequests, _data.MaxChildRequestId,
-														 _data.Tick, 1, _data.Location);
-											if (saveVoxelTrace(blocks[localAddress].Data, ref _data))
-											{
-												writeData(outputImage, ref _data);
-												return;
-											}
-										}
-
-										// Navigate to child
-										else if (_data.ConeDepth > (depth + 1))
-											depth++;
-
-										// Resolve the colour of this voxel
-										else if (depth <= _data.ConeDepth && _data.ConeDepth <= (depth + 1))
-										{
-											if (saveVoxelTrace(blocks[localAddress].Data, ref _data))
-											{
-												writeData(outputImage, ref _data);
-												return;
-											}
-										}
-									}
-									else
-									{
-										blockLoop = traverseChunk(depth, chunk(depth, ref _data.Location), ref _data);
-										if (leaving(ref _data))
-										{
-											writeBackgroundData(outputImage, ref _data);
-											return;
-										}
-									}
-								}
+							if (depth != 1)
 								depth--;
+							else
+							{
+								writeBackgroundData(outputImage, ref _data);
+								return;
 							}
-							depth = _data.N;
 						}
-
 					}
-					else
+
+					if (leaving(ref _data))
 					{
-						baseLoop = traverseChunk(depth, chunk(depth, ref _data.Location), ref _data);
-						if (leaving(ref _data))
-						{
-							writeBackgroundData(outputImage, ref _data);
-							return;
-						}
+						writeBackgroundData(outputImage, ref _data);
+						return;
 					}
 				}
-				if (depth != 1)
-					depth--;
-			}
+				else
+				{
+					if (depth < _data.N)
+						// still traversing base chunks
+						depth++;
+					else
+					{
+						// now traversing blocks
+						if (depth == _data.N)
+							depth = (byte)(_data.N + 2);
 
-			writeBackgroundData(outputImage, ref _data);
+						// Loop over a block and its children
+						while (depth > (_data.N + 1))
+						{
+							if (depth == _data.N + 2)
+								localAddress = baseLocation(depth, _data.Location);
+							else
+								localAddress = blocks[depthHeap[depth - 1]].Child + chunkPosition((byte)(depth - 1), _data.Location);
+							depthHeap[depth] = localAddress;
+
+							// Update usage
+							if (usage[localAddress >> 3].Tick < ushort.MaxValue - 1)
+								usage[localAddress >> 3].Tick = _data.Tick;
+
+							// Check if current block chunk contains geometry
+							if (((blocks[localAddress].Chunk >> (chunkPosition(depth, _data.Location) * 2)) & 2) != 2)
+							{
+								previousChunkPosition = chunkPosition((byte)(depth - 1), _data.Location);
+								if (!traverseChunk(depth, ref _data))
+								{
+									depth--;
+									// check if traversal stepped out of parent chunk as well
+									if (comparePositions(depth, previousChunkPosition, ref _data))
+										depth--;
+								}
+								if (leaving(ref _data))
+								{
+									writeBackgroundData(outputImage, ref _data);
+									return;
+								}
+							}
+							else
+							{
+								depthHeap[depth + 1] = blocks[localAddress].Child + chunkPosition(depth, _data.Location);
+
+								// C value is too diffuse to use
+								if (_data.ConeDepth < (_data.N + 2))
+								{
+									depth = (byte)(_data.N + 2);
+									if (saveVoxelTrace(blocks[depthHeap[depth]].Data, ref _data))
+									{
+										writeData(outputImage, ref _data);
+										return;
+									}
+								}
+
+								// C value requires me to go up a level
+								else if (_data.ConeDepth < depth)
+									break;
+
+								// No additional data could be found at child depth
+								else if (blocks[localAddress].Child == uint.MaxValue)
+								{
+									requestChild(localAddress, depth, ref childRequestId,
+												 childRequests, _data.MaxChildRequestId,
+												 _data.Tick, 1, _data.Location);
+									if (saveVoxelTrace(blocks[localAddress].Data, ref _data))
+									{
+										writeData(outputImage, ref _data);
+										return;
+									}
+								}
+
+								// Navigate to child
+								else if (_data.ConeDepth > (depth + 1))
+									depth++;
+
+								// Resolve the colour of this voxel
+								else
+								{
+									if (saveVoxelTrace(average(localAddress, blocks, ref _data), ref _data))
+									{
+										writeData(outputImage, ref _data);
+										return;
+									}
+								}
+							}
+						}
+						depth = _data.N;
+					}
+				}
+			}
 		}
 
 		/// <summary>

@@ -1,4 +1,5 @@
 ﻿using SvoTracer.Domain;
+using SvoTracer.Domain.Models;
 using System;
 using System.Numerics;
 
@@ -29,8 +30,21 @@ namespace SvoTracer.Window
 				treeManager.SaveTree(treeName, builder.BuildTree(N, maxDepth, uint.MaxValue / 64));
 			var tree = treeManager.LoadTree(treeName);
 
-			//new TestRun(tree).Run();
-			using MainWindow win = new MainWindow(1000, 1000, "SVO Tracer", tree);
+
+			var input = new TraceInputData()
+			{
+				Origin = new(-2f, 0.5f, 0.5f),
+				Facing = OpenTK.Mathematics.Matrix3.Identity,
+				FoV = new((float)Math.PI / 4f, (float)Math.PI / 4f),
+				DoF = new(0, 0.169f),
+				MaxOpacity = 200,
+				MaxChildRequestId = 6000,
+				ScreenSize = new(100, 100),
+				N = tree.N,
+			};
+
+			//new TestRun(tree).Run(input);
+			using MainWindow win = new(1000, 1000, "SVO Tracer", tree, input);
 			win.Run();
 		}
 	}

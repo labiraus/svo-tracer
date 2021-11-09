@@ -25,19 +25,20 @@ namespace SvoTracer.Window
 
 		private readonly ComputeManager _computeManager;
 		private readonly WorldManager _worldManager = new();
-		private readonly StateManager _stateManager = new();
+		private readonly StateManager _stateManager;
 		private RenderbufferHandle glRenderbuffer = RenderbufferHandle.Zero;
 		private FramebufferHandle framebuffer = FramebufferHandle.Zero;
 		#endregion
 
 		#region //Constructor
-		public MainWindow(int width, int height, string title, Octree tree)
+		public MainWindow(int width, int height, string title, Octree tree, TraceInputData input)
 			: base(GameWindowSettings.Default, new NativeWindowSettings()
 			{
 				Title = title,
 				Size = new Vector2i(width, height)
 			})
 		{
+			_stateManager = new(input);
 			_computeManager = buildComputeManager();
 			setupKernels(tree);
 		}
