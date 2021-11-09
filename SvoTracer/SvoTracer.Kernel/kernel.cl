@@ -804,7 +804,6 @@ WorkingData setup(int2 coord, TraceInputData _input) {
   float u = _input.FoV[0] * native_divide((native_divide((float)_input.ScreenSize.x, 2) - (float)coord.x), (float)_input.ScreenSize.x);
   // rotation around the y axis
   float v = _input.FoV[1] * native_divide((native_divide((float)_input.ScreenSize.y, 2) - (float)coord.y), (float)_input.ScreenSize.y);
-  float w = 0;
   float sinU = native_sin(u);
   float cosU = native_cos(u);
   float sinV = native_sin(v);
@@ -879,13 +878,8 @@ WorkingData setup(int2 coord, TraceInputData _input) {
                         _input.Facing[1] * matRot0x + _input.Facing[4] * matRot1x + _input.Facing[7] * matRot2x,
                         _input.Facing[2] * matRot0x + _input.Facing[5] * matRot1x + _input.Facing[8] * matRot2x);
 
-  float dirLength = length(dir);
-  data.Direction.x = native_divide(dir.x, dirLength);
-  data.Direction.y = native_divide(dir.y, dirLength);
-  data.Direction.z = native_divide(dir.z, dirLength);
-
+  data.Direction = normalize(dir);
   data.InvDirection = (float3)(native_divide(1, data.Direction.x), native_divide(1, data.Direction.y), native_divide(1, data.Direction.z));
-
   data.DirectionSignX = data.Direction.x >= 0;
   data.DirectionSignY = data.Direction.y >= 0;
   data.DirectionSignZ = data.Direction.z >= 0;

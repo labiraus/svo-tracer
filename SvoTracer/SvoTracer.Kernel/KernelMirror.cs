@@ -37,6 +37,14 @@ namespace SvoTracer.Kernel
 		{
 			return x / y;
 		}
+		static float native_sin(float theta)
+		{
+			return (float)Math.Sin((double)theta);
+		}
+		static float native_cos(float theta)
+		{
+			return (float)Math.Cos((double)theta);
+		}
 
 		/// <summary>
 		/// Converts a float between 0 and 1 into a ulong coordinate
@@ -882,70 +890,22 @@ namespace SvoTracer.Kernel
 			data.Coord = new Vector2i(coord[0], coord[1]);
 			data.ScreenSize = new Vector2i(_input.ScreenSize[0], _input.ScreenSize[1]);
 			//Horizontal and vertical offset angles float h and v
-			float x = _input.FoV[0] *
-					  native_divide((native_divide((float)_input.ScreenSize[0], 2) -
-													(float)coord.X),
-									(float)_input.ScreenSize[0]);
-			float y = _input.FoV[1] *
-					  native_divide((native_divide((float)_input.ScreenSize[1], 2) -
-													(float)coord.Y),
-									(float)_input.ScreenSize[1]);
-			//float su = (float)Math.Sin(_input.Facing.Z);
-			//float cu = (float)Math.Cos(_input.Facing.Z);
-			//float sv = (float)Math.Sin(_input.Facing.Y);
-			//float cv = (float)Math.Cos(_input.Facing.Y);
-			//float sw = (float)Math.Sin(_input.Facing.X);
-			//float cw = (float)Math.Cos(_input.Facing.X);
-			////float su2 = 0;
-			////float cu2 = 1;
-			//float sv2 = (float)Math.Sin(v);
-			//float cv2 = (float)Math.Cos(v);
-			//float sw2 = (float)Math.Sin(h);
-			//float cw2 = (float)Math.Cos(h);
+			float u = _input.FoV[0] *
+					  native_divide((native_divide((float)_input.ScreenSize[0], 2) - (float)coord.X), (float)_input.ScreenSize[0]);
+			float v = _input.FoV[1] *
+					  native_divide((native_divide((float)_input.ScreenSize[1], 2) - (float)coord.Y), (float)_input.ScreenSize[1]);
+			float sinU = native_sin(u);
+			float cosU = native_cos(u);
+			float sinV = native_sin(v);
+			float cosV = native_cos(v);
 
-			//float AM11 = cv * cw;
-			//float AM12 = su * sv * cw - cu * sw;
-			//float AM13 = su * sw + cu * sv * cw;
-			//float AM21 = cv * sw;
-			//float AM22 = cu * cw + su * sv * sw;
-			//float AM23 = cu * sv * sw - su * cw;
-			//float AM31 = -sv;
-			//float AM32 = su * cv;
-			//float AM33 = cu * cv;
-
-			//float BM11 = cv2 * cw2;
-			////float BM12 = su2 * sv2 * cw2 - cu2 * sw2;
-			////float BM13 = su2 * sw2 + cu2 * sv2 * cw2;
-			//float BM21 = cv2 * sw2;
-			////float BM22 = cu2 * cw2 + su2 * sv2 * sw2;
-			////float BM23 = cu2 * sv2 * sw2 - su2 * cw2;
-			//float BM31 = -sv2;
-			////float BM32 = su2 * cv2;
-			////float BM33 = cu2 * cv2;
-
-			//float CM11 = AM11 * BM11 + AM12 * BM21 + AM13 * BM31;
-			////float CM12 = AM11 * BM12 + AM12 * BM22 + AM13 * BM32;
-			////float CM13 = AM11 * BM13 + AM12 * BM23 + AM13 * BM33;
-			//float CM21 = AM21 * BM11 + AM22 * BM21 + AM23 * BM31;
-			////float CM22 = AM21 * BM12 + AM22 * BM22 + AM23 * BM32;
-			////float CM23 = AM21 * BM13 + AM22 * BM23 + AM23 * BM33;
-			//float CM31 = AM31 * BM11 + AM32 * BM21 + AM33 * BM31;
-			////float CM32 = AM31 * BM12 + AM32 * BM22 + AM33 * BM32;
-			////float CM33 = AM31 * BM13 + AM32 * BM23 + AM33 * BM33;
-
-			//float yaw = (float)Math.Atan2(CM21, CM11);
-			//float pitch = -(float)Math.Asin(CM31);
-
-			////Unit vector of direction float3 DIR
-			//data.Direction = new Vector3(
-			//	(float)Math.Cos(yaw) * (float)Math.Cos(pitch),
-			//	(float)Math.Sin(yaw) * (float)Math.Cos(pitch),
-			//	(float)Math.Sin(pitch));
-
-
-			var dir = Vector3.Transform(new Vector3(0, 0, 1), new Quaternion(x, y, 0));
-			data.Direction = Vector3.TransformRow(new Vector3(0, 0, 1), Matrix3.CreateRotationY(y) * Matrix3.CreateRotationX(x) * _input.Facing);
-
+			float matRot0x = cosU * cosV;
+			float matRot1x = (0 - sinU) * cosV;
+			float matRot2x = sinV;
+			var dir = new Vector3(_input.Facing.M11 * matRot0x + _input.Facing.M21 * matRot1x + _input.Facing.M31 * matRot2x,
+								  _input.Facing.M12 * matRot0x + _input.Facing.M22 * matRot1x + _input.Facing.M32 * matRot2x,
+								  _input.Facing.M13 * matRot0x + _input.Facing.M23 * matRot1x + _input.Facing.M33 * matRot2x);
+			data.Direction = dir.Normalized();
 			data.InvDirection = new Vector3(1 / data.Direction.X, 1 / data.Direction.Y, 1 / data.Direction.Z);
 			data.DirectionSignX = data.Direction.X >= 0;
 			data.DirectionSignY = data.Direction.Y >= 0;
