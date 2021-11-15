@@ -11,7 +11,7 @@ namespace SvoTracer.Window
 		private static void Main(string[] args)
 		{
 			byte N = 4;
-			ushort maxDepth = 9;
+			byte maxDepth = 9;
 			var treeName = "test" + maxDepth;
 			var builder = new CubeBuilder(
 				new Vector3(0.3f, 0.3f, 0.3f),
@@ -34,6 +34,7 @@ namespace SvoTracer.Window
 			var input = new TraceInputData()
 			{
 				Origin = new(-2f, 0.5f, 0.5f),
+				//Origin = new(0.2f, 0.59f, 0.59f),
 				Facing = OpenTK.Mathematics.Matrix3.Identity,
 				FoV = new((float)Math.PI / 4f, (float)Math.PI / 4f),
 				DoF = new(0, 0.169f),

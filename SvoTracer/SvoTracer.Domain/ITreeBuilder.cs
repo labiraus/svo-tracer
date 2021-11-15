@@ -9,6 +9,6 @@ namespace SvoTracer.Domain
 {
 	public interface ITreeBuilder
 	{
-		Octree BuildTree(byte N, ushort maxDepth, uint maxSize = 0);
+		Octree BuildTree(byte N, byte maxDepth, uint maxSize = 0);
 	}
 }

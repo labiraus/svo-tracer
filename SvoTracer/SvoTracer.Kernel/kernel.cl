@@ -874,11 +874,9 @@ WorkingData setup(int2 coord, TraceInputData _input) {
   float matRot0x = cosU * cosV;
   float matRot1x = (0 - sinU) * cosV;
   float matRot2x = sinV;
-  float3 dir = (float3)(_input.Facing[0] * matRot0x + _input.Facing[3] * matRot1x + _input.Facing[6] * matRot2x,
+  data.Direction = (float3)(_input.Facing[0] * matRot0x + _input.Facing[3] * matRot1x + _input.Facing[6] * matRot2x,
                         _input.Facing[1] * matRot0x + _input.Facing[4] * matRot1x + _input.Facing[7] * matRot2x,
                         _input.Facing[2] * matRot0x + _input.Facing[5] * matRot1x + _input.Facing[8] * matRot2x);
-
-  data.Direction = normalize(dir);
   data.InvDirection = (float3)(native_divide(1, data.Direction.x), native_divide(1, data.Direction.y), native_divide(1, data.Direction.z));
   data.DirectionSignX = data.Direction.x >= 0;
   data.DirectionSignY = data.Direction.y >= 0;

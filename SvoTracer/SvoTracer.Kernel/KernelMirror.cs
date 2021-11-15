@@ -1377,8 +1377,6 @@ namespace SvoTracer.Kernel
 							}
 							else
 							{
-								depthHeap[depth + 1] = blocks[localAddress].Child + chunkPosition(depth, _data.Location);
-
 								// C value is too diffuse to use
 								if (_data.ConeDepth < (_data.N + 2))
 								{

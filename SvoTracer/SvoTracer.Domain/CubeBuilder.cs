@@ -24,27 +24,27 @@ namespace SvoTracer.Domain
 
 		public CubeBuilder(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 e, Vector3 f, Vector3 g, Vector3 h)
 		{
-			x0 = (new float[] { a.X, b.X, c.X, d.X, e.X, f.X, g.X, h.X }.Min(), new float[] { a.X, b.X, c.X, d.X, e.X, f.X, g.X, h.X }.Max());
-			y0 = (new float[] { a.Y, b.Y, c.Y, d.Y, e.Y, f.Y, g.Y, h.Y }.Min(), new float[] { a.Y, b.Y, c.Y, d.Y, e.Y, f.Y, g.Y, h.Y }.Max());
-			z0 = (new float[] { a.Z, b.Z, c.Z, d.Z, e.Z, f.Z, g.Z, h.Z }.Min(), new float[] { a.Z, b.Z, c.Z, d.Z, e.Z, f.Z, g.Z, h.Z }.Max());
-			x1 = (new float[] { a.X, b.X, c.X, d.X }.Min(), new float[] { a.X, b.X, c.X, d.X }.Max());
-			y1 = (new float[] { a.Y, b.Y, c.Y, d.Y }.Min(), new float[] { a.Y, b.Y, c.Y, d.Y }.Max());
-			z1 = (new float[] { a.Z, b.Z, c.Z, d.Z }.Min(), new float[] { a.Z, b.Z, c.Z, d.Z }.Max());
-			x2 = (new float[] { a.X, b.X, e.X, f.X }.Min(), new float[] { a.X, b.X, e.X, f.X }.Max());
-			y2 = (new float[] { a.Y, b.Y, e.Y, f.Y }.Min(), new float[] { a.Y, b.Y, e.Y, f.Y }.Max());
-			z2 = (new float[] { a.Z, b.Z, e.Z, f.Z }.Min(), new float[] { a.Z, b.Z, e.Z, f.Z }.Max());
-			x3 = (new float[] { b.X, c.X, f.X, g.X }.Min(), new float[] { b.X, c.X, f.X, g.X }.Max());
-			y3 = (new float[] { b.Y, c.Y, f.Y, g.Y }.Min(), new float[] { b.Y, c.Y, f.Y, g.Y }.Max());
-			z3 = (new float[] { b.Z, c.Z, f.Z, g.Z }.Min(), new float[] { b.Z, c.Z, f.Z, g.Z }.Max());
-			x4 = (new float[] { c.X, d.X, g.X, h.X }.Min(), new float[] { c.X, d.X, g.X, h.X }.Max());
-			y4 = (new float[] { c.Y, d.Y, g.Y, h.Y }.Min(), new float[] { c.Y, d.Y, g.Y, h.Y }.Max());
-			z4 = (new float[] { c.Z, d.Z, g.Z, h.Z }.Min(), new float[] { c.Z, d.Z, g.Z, h.Z }.Max());
-			x5 = (new float[] { a.X, d.X, e.X, h.X }.Min(), new float[] { a.X, d.X, e.X, h.X }.Max());
-			y5 = (new float[] { a.Y, d.Y, e.Y, h.Y }.Min(), new float[] { a.Y, d.Y, e.Y, h.Y }.Max());
-			z5 = (new float[] { a.Z, d.Z, e.Z, h.Z }.Min(), new float[] { a.Z, d.Z, e.Z, h.Z }.Max());
-			x6 = (new float[] { e.X, f.X, g.X, h.X }.Min(), new float[] { e.X, f.X, g.X, h.X }.Max());
-			y6 = (new float[] { e.Y, f.Y, g.Y, h.Y }.Min(), new float[] { e.Y, f.Y, g.Y, h.Y }.Max());
-			z6 = (new float[] { e.Z, f.Z, g.Z, h.Z }.Min(), new float[] { e.Z, f.Z, g.Z, h.Z }.Max());
+			x0 = (new[] { a.X, b.X, c.X, d.X, e.X, f.X, g.X, h.X }.Min(), new[] { a.X, b.X, c.X, d.X, e.X, f.X, g.X, h.X }.Max());
+			y0 = (new[] { a.Y, b.Y, c.Y, d.Y, e.Y, f.Y, g.Y, h.Y }.Min(), new[] { a.Y, b.Y, c.Y, d.Y, e.Y, f.Y, g.Y, h.Y }.Max());
+			z0 = (new[] { a.Z, b.Z, c.Z, d.Z, e.Z, f.Z, g.Z, h.Z }.Min(), new[] { a.Z, b.Z, c.Z, d.Z, e.Z, f.Z, g.Z, h.Z }.Max());
+			x1 = (new[] { a.X, b.X, c.X, d.X }.Min(), new[] { a.X, b.X, c.X, d.X }.Max());
+			y1 = (new[] { a.Y, b.Y, c.Y, d.Y }.Min(), new[] { a.Y, b.Y, c.Y, d.Y }.Max());
+			z1 = (new[] { a.Z, b.Z, c.Z, d.Z }.Min(), new[] { a.Z, b.Z, c.Z, d.Z }.Max());
+			x2 = (new[] { a.X, b.X, e.X, f.X }.Min(), new[] { a.X, b.X, e.X, f.X }.Max());
+			y2 = (new[] { a.Y, b.Y, e.Y, f.Y }.Min(), new[] { a.Y, b.Y, e.Y, f.Y }.Max());
+			z2 = (new[] { a.Z, b.Z, e.Z, f.Z }.Min(), new[] { a.Z, b.Z, e.Z, f.Z }.Max());
+			x3 = (new[] { b.X, c.X, f.X, g.X }.Min(), new[] { b.X, c.X, f.X, g.X }.Max());
+			y3 = (new[] { b.Y, c.Y, f.Y, g.Y }.Min(), new[] { b.Y, c.Y, f.Y, g.Y }.Max());
+			z3 = (new[] { b.Z, c.Z, f.Z, g.Z }.Min(), new[] { b.Z, c.Z, f.Z, g.Z }.Max());
+			x4 = (new[] { c.X, d.X, g.X, h.X }.Min(), new[] { c.X, d.X, g.X, h.X }.Max());
+			y4 = (new[] { c.Y, d.Y, g.Y, h.Y }.Min(), new[] { c.Y, d.Y, g.Y, h.Y }.Max());
+			z4 = (new[] { c.Z, d.Z, g.Z, h.Z }.Min(), new[] { c.Z, d.Z, g.Z, h.Z }.Max());
+			x5 = (new[] { a.X, d.X, e.X, h.X }.Min(), new[] { a.X, d.X, e.X, h.X }.Max());
+			y5 = (new[] { a.Y, d.Y, e.Y, h.Y }.Min(), new[] { a.Y, d.Y, e.Y, h.Y }.Max());
+			z5 = (new[] { a.Z, d.Z, e.Z, h.Z }.Min(), new[] { a.Z, d.Z, e.Z, h.Z }.Max());
+			x6 = (new[] { e.X, f.X, g.X, h.X }.Min(), new[] { e.X, f.X, g.X, h.X }.Max());
+			y6 = (new[] { e.Y, f.Y, g.Y, h.Y }.Min(), new[] { e.Y, f.Y, g.Y, h.Y }.Max());
+			z6 = (new[] { e.Z, f.Z, g.Z, h.Z }.Min(), new[] { e.Z, f.Z, g.Z, h.Z }.Max());
 
 			normal1 = Plane.CreateFromVertices(a, b, c).Normal;
 			normal2 = Plane.CreateFromVertices(a, b, e).Normal;
@@ -54,21 +54,19 @@ namespace SvoTracer.Domain
 			normal6 = Plane.CreateFromVertices(e, f, g).Normal;
 		}
 
-		protected override bool ContainsGeometry((float min, float max) x, (float min, float max) y, (float min, float max) z) =>
-				x.min <= x0.max && x.max >= x0.min &&
-				y.min <= y0.max && y.max >= y0.min &&
-				z.min <= z0.max && z.max >= z0.min;
+		protected override bool ContainsGeo((float min, float max) x, (float min, float max) y, (float min, float max) z) =>
+				(x.min < x0.max && x.max > x0.min &&
+				 y.min < y0.max && y.max > y0.min &&
+				 z.min < z0.max && z.max > z0.min);
 
 		protected override bool ContainsAir((float min, float max) x, (float min, float max) y, (float min, float max) z) =>
-			  !ContainsGeometry(x, y, z) || intersections(x, y, z) > 0;
+			  !ContainsGeo(x, y, z) || intersections(x, y, z) > 0;
 
-		protected override Block MakeBlock(Location coordinates, ushort depth)
+		protected override Block MakeBlock(Location coordinates, byte depth)
 		{
-			var xRange = CoordinateRange(coordinates[0], depth);
-			var yRange = CoordinateRange(coordinates[1], depth);
-			var zRange = CoordinateRange(coordinates[2], depth);
-			var normal = getNormal((xRange.min, xRange.max), (yRange.min, yRange.max), (zRange.min, zRange.max));
-			var colour = getColour((xRange.min, xRange.max), (yRange.min, yRange.max), (zRange.min, zRange.max));
+			var range = coordinates.CoordinateRanges(depth);
+			var normal = getNormal((range.x.min, range.x.max), (range.y.min, range.y.max), (range.z.min, range.z.max));
+			var colour = getColour((range.x.min, range.x.max), (range.y.min, range.y.max), (range.z.min, range.z.max));
 			Color c = Color.Black;
 			switch (depth)
 			{
@@ -109,9 +107,9 @@ namespace SvoTracer.Domain
 			};
 		}
 
-		private (short pitch, short yaw) getNormal((float, float) a, (float, float) b, (float, float) c)
+		private (short pitch, short yaw) getNormal((float, float) x, (float, float) y, (float, float) z)
 		{
-			var intersect = intersections(a, b, c);
+			var intersect = intersections(x, y, z);
 			switch (intersect)
 			{
 				case Face.Red:
@@ -130,11 +128,11 @@ namespace SvoTracer.Domain
 			return (0, 0);
 		}
 
-		private byte[] getColour((float, float) a, (float, float) b, (float, float) c)
+		private byte[] getColour((float, float) x, (float, float) y, (float, float) z)
 		{
-			var intersect = intersections(a, b, c);
+			var intersect = intersections(x, y, z);
 			var edge = ((int)intersect >> 5 & 1) + ((int)intersect >> 4 & 1) + ((int)intersect >> 3 & 1) + ((int)intersect >> 2 & 1) + ((int)intersect >> 1 & 1) + ((int)intersect & 1);
-			if (a.Item2 - a.Item1 < 0.0005 && edge > 1)
+			if (x.Item2 - x.Item1 < 0.0005 && edge > 1)
 			{
 				int colour = Color.Black.ToArgb();
 				return new byte[] { (byte)(colour >> 24), (byte)(colour >> 16), (byte)(colour >> 8) };
@@ -143,32 +141,32 @@ namespace SvoTracer.Domain
 			return faceColour(intersect);
 		}
 
-		private Face intersections((float min, float max) a, (float min, float max) b, (float min, float max) c)
+		private Face intersections((float min, float max) x, (float min, float max) y, (float min, float max) z)
 		{
 			int intersections = 0;
-			intersections += (a.min <= x1.max && a.max >= x1.min &&
-				b.min <= y1.max && b.max >= y1.min &&
-				c.min <= z1.max && c.max >= z1.min) ? 1 : 0;
+			intersections += (x.min < x1.max && x.max > x1.min &&
+				y.min < y1.max && y.max > y1.min &&
+				z.min < z1.max && z.max > z1.min) ? 1 : 0;
 
-			intersections += (a.min <= x2.max && a.max >= x2.min &&
-				b.min <= y2.max && b.max >= y2.min &&
-				c.min <= z2.max && c.max >= z2.min) ? 2 : 0;
+			intersections += (x.min < x2.max && x.max > x2.min &&
+				y.min < y2.max && y.max > y2.min &&
+				z.min < z2.max && z.max > z2.min) ? 2 : 0;
 
-			intersections += (a.min <= x3.max && a.max >= x3.min &&
-				b.min <= y3.max && b.max >= y3.min &&
-				c.min <= z3.max && c.max >= z3.min) ? 4 : 0;
+			intersections += (x.min < x3.max && x.max > x3.min &&
+				y.min < y3.max && y.max > y3.min &&
+				z.min < z3.max && z.max > z3.min) ? 4 : 0;
 
-			intersections += (a.min <= x4.max && a.max >= x4.min &&
-				b.min <= y4.max && b.max >= y4.min &&
-				c.min <= z4.max && c.max >= z4.min) ? 8 : 0;
+			intersections += (x.min < x4.max && x.max > x4.min &&
+				y.min < y4.max && y.max > y4.min &&
+				z.min < z4.max && z.max > z4.min) ? 8 : 0;
 
-			intersections += (a.min <= x5.max && a.max >= x5.min &&
-				b.min <= y5.max && b.max >= y5.min &&
-				c.min <= z5.max && c.max >= z5.min) ? 16 : 0;
+			intersections += (x.min < x5.max && x.max > x5.min &&
+				y.min < y5.max && y.max > y5.min &&
+				z.min < z5.max && z.max > z5.min) ? 16 : 0;
 
-			intersections += (a.min <= x6.max && a.max >= x6.min &&
-				b.min <= y6.max && b.max >= y6.min &&
-				c.min <= z6.max && c.max >= z6.min) ? 32 : 0;
+			intersections += (x.min < x6.max && x.max > x6.min &&
+				y.min < y6.max && y.max > y6.min &&
+				z.min < z6.max && z.max > z6.min) ? 32 : 0;
 			return (Face)intersections;
 		}
 
