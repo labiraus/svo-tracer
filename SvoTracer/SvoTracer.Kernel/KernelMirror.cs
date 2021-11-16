@@ -230,12 +230,21 @@ namespace SvoTracer.Kernel
 				(_data.DirectionSignZ && _data.Location.Z == ulong.MaxValue);
 		}
 
-		static bool comparePositions(byte depth, byte position, ref WorkingData _data)
+		static byte comparePositions(byte depth, Location previousLocation, ref WorkingData _data)
 		{
 			byte newPosition = chunkPosition(depth, _data.Location);
-			return ((position & 1) == (_data.DirectionSignX ? 1 : 0) && (newPosition & 1) != (_data.DirectionSignX ? 1 : 0)) ||
-				   (((position >> 1) & 1) == (_data.DirectionSignY ? 1 : 0) && ((newPosition >> 1) & 1) != (_data.DirectionSignY ? 1 : 0)) ||
-				   (((position >> 2) & 1) == (_data.DirectionSignZ ? 1 : 0) && ((newPosition >> 2) & 1) != (_data.DirectionSignZ ? 1 : 0));
+			byte previousPosition = chunkPosition(depth, previousLocation);
+			while (((previousPosition & 1) == (_data.DirectionSignX ? 1 : 0) && (newPosition & 1) != (_data.DirectionSignX ? 1 : 0)) ||
+				   (((previousPosition >> 1) & 1) == (_data.DirectionSignY ? 1 : 0) && ((newPosition >> 1) & 1) != (_data.DirectionSignY ? 1 : 0)) ||
+				   (((previousPosition >> 2) & 1) == (_data.DirectionSignZ ? 1 : 0) && ((newPosition >> 2) & 1) != (_data.DirectionSignZ ? 1 : 0)))
+			{
+				if (depth == 1)
+					break;
+				depth--;
+				newPosition = chunkPosition(depth, _data.Location);
+				previousPosition = chunkPosition(depth, previousLocation);
+			}
+			return depth;
 		}
 
 		/// <summary>
@@ -245,7 +254,7 @@ namespace SvoTracer.Kernel
 		/// <param name="depth"></param>
 		/// <param name="position"></param>
 		/// <returns>New chunk position or 8 for outside of block</returns>
-		static bool traverseChunk(byte depth, ref WorkingData _data)
+		static void traverseChunk(byte depth, ref WorkingData _data)
 		{
 			ulong dx = roundUlong(_data.Location.X, depth, _data.DirectionSignX);
 			ulong dy = roundUlong(_data.Location.Y, depth, _data.DirectionSignY);
@@ -254,34 +263,24 @@ namespace SvoTracer.Kernel
 			float ax = Math.Abs(dx * _data.InvDirection.X);
 			float ay = Math.Abs(dy * _data.InvDirection.Y);
 			float az = Math.Abs(dz * _data.InvDirection.Z);
-			bool remainInBlock = true;
-			byte position = chunkPosition(depth, _data.Location);
+
 			if (ax <= ay && ax <= az)
 			{
 				float udx = ulongToFloat(dx);
 				dy = floatToULong(_data.Direction.Y * _data.InvDirection.X * udx);
 				dz = floatToULong(_data.Direction.Z * _data.InvDirection.X * udx);
-
-				if ((_data.DirectionSignX && (position & 1) == 1) || (!_data.DirectionSignX && (position & 1) == 0))
-					remainInBlock = false;
 			}
 			else if (ay <= ax && ay <= az)
 			{
 				float udy = ulongToFloat(dy);
 				dx = floatToULong(_data.Direction.X * _data.InvDirection.Y * udy);
 				dz = floatToULong(_data.Direction.Z * _data.InvDirection.Y * udy);
-
-				if ((_data.DirectionSignY && (position >> 1 & 1) == 1) || (!_data.DirectionSignY && (position >> 1 & 1) == 0))
-					remainInBlock = false;
 			}
 			else
 			{
 				float udz = ulongToFloat(dz);
 				dx = floatToULong(_data.Direction.X * _data.InvDirection.Z * udz);
 				dy = floatToULong(_data.Direction.Y * _data.InvDirection.Z * udz);
-
-				if ((_data.DirectionSignZ && (position >> 2 & 1) == 1) || (!_data.DirectionSignZ && (position >> 2 & 1) == 0))
-					remainInBlock = false;
 			}
 
 			if (_data.DirectionSignX)
@@ -301,39 +300,21 @@ namespace SvoTracer.Kernel
 
 			// if trafersal has overflowed ulong then the octree has been left
 			if (_data.DirectionSignX && _data.Location.X == 0)
-			{
 				_data.Location.X = ulong.MaxValue;
-				remainInBlock = false;
-			}
 			else if (!_data.DirectionSignX && _data.Location.X == ulong.MaxValue)
-			{
 				_data.Location.X = 0;
-				remainInBlock = false;
-			}
+
 			if (_data.DirectionSignY && _data.Location.Y == 0)
-			{
 				_data.Location.Y = ulong.MaxValue;
-				remainInBlock = false;
-			}
 			else if (!_data.DirectionSignY && _data.Location.Y == ulong.MaxValue)
-			{
 				_data.Location.Y = 0;
-				remainInBlock = false;
-			}
+
 			if (_data.DirectionSignZ && _data.Location.Z == 0)
-			{
 				_data.Location.Z = ulong.MaxValue;
-				remainInBlock = false;
-			}
 			else if (!_data.DirectionSignZ && _data.Location.Z == ulong.MaxValue)
-			{
 				_data.Location.Z = 0;
-				remainInBlock = false;
-			}
 
 			setConeDepth(ref _data);
-
-			return remainInBlock;
 		}
 
 		/// <summary>
@@ -1291,6 +1272,7 @@ namespace SvoTracer.Kernel
 			uint localAddress;
 			uint x = get_global_id(0);
 			uint y = get_global_id(1);
+			Location previousLocation;
 			Vector2i coord = new Vector2i((int)x, (int)y);
 			// Used to navigate back up the tree
 			uint[] depthHeap = new uint[64];
@@ -1311,28 +1293,14 @@ namespace SvoTracer.Kernel
 				if (depth <= _data.N && (bases[localAddress] >> (chunkPosition(depth, _data.Location) * 2) & 2) != 2)
 				{
 					// current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
-					previousChunkPosition = chunkPosition((byte)(depth - 1), _data.Location);
-					if (!traverseChunk(depth, ref _data) && depth != 1)
-					{
-						depth--;
-						// check if traversal stepped out of parent chunk as well
-						if (depth != 1 && comparePositions(depth, previousChunkPosition, ref _data))
-						{
-							if (depth != 1)
-								depth--;
-							else
-							{
-								writeBackgroundData(outputImage, ref _data);
-								return;
-							}
-						}
-					}
-
+					previousLocation = _data.Location;
+					traverseChunk(depth, ref _data);
 					if (leaving(ref _data))
 					{
 						writeBackgroundData(outputImage, ref _data);
 						return;
 					}
+					depth = comparePositions(depth, previousLocation, ref _data);
 				}
 				else
 				{
@@ -1361,19 +1329,14 @@ namespace SvoTracer.Kernel
 							// Check if current block chunk contains geometry
 							if (((blocks[localAddress].Chunk >> (chunkPosition(depth, _data.Location) * 2)) & 2) != 2)
 							{
-								previousChunkPosition = chunkPosition((byte)(depth - 1), _data.Location);
-								if (!traverseChunk(depth, ref _data))
-								{
-									depth--;
-									// check if traversal stepped out of parent chunk as well
-									if (comparePositions(depth, previousChunkPosition, ref _data))
-										depth--;
-								}
+								previousLocation = _data.Location;
+								traverseChunk(depth, ref _data);
 								if (leaving(ref _data))
 								{
 									writeBackgroundData(outputImage, ref _data);
 									return;
 								}
+								depth = comparePositions(depth, previousLocation, ref _data);
 							}
 							else
 							{

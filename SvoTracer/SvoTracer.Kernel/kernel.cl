@@ -257,7 +257,7 @@ bool leaving(WorkingData *_data) {
 }
 
 // Moves to the nearest neighboring chunk along the Direction vector
-uchar traverseChunk(uchar depth, WorkingData *_data) {
+void traverseChunk(uchar depth, WorkingData *_data) {
   // determine distance from current location to x, y, z chunk boundary
   ulong dx = roundUlong(_data->Location.x, depth, _data->DirectionSignX);
   ulong dy = roundUlong(_data->Location.y, depth, _data->DirectionSignY);
@@ -267,30 +267,19 @@ uchar traverseChunk(uchar depth, WorkingData *_data) {
   float ax = fabs(dx * _data->InvDirection.x);
   float ay = fabs(dy * _data->InvDirection.y);
   float az = fabs(dz * _data->InvDirection.z);
-  bool remainInBlock = true;
-  uchar position = chunkPosition(depth, _data->Location);
 
   if (ax <= ay && ax <= az) {
     float udx = ulongToFloat(dx);
     dy = floatToUlong(_data->Direction.y * _data->InvDirection.x * udx);
     dz = floatToUlong(_data->Direction.z * _data->InvDirection.x * udx);
-
-    if ((position & 1) == _data->DirectionSignX)
-      remainInBlock = false;
   } else if (ay <= ax && ay <= az) {
     float udy = ulongToFloat(dy);
     dx = floatToUlong(_data->Direction.x * _data->InvDirection.y * udy);
     dz = floatToUlong(_data->Direction.z * _data->InvDirection.y * udy);
-
-    if ((position >> 1 & 1) == _data->DirectionSignY)
-      remainInBlock = false;
   } else {
     float udz = ulongToFloat(dz);
     dx = floatToUlong(_data->Direction.x * _data->InvDirection.z * udz);
     dy = floatToUlong(_data->Direction.y * _data->InvDirection.z * udz);
-
-    if ((position >> 2 & 1) == _data->DirectionSignZ)
-      remainInBlock = false;
   }
 
   if (_data->DirectionSignX)
@@ -309,40 +298,37 @@ uchar traverseChunk(uchar depth, WorkingData *_data) {
     _data->Location.z -= dz;
 
   // if trafersal has overflowed ulong then the octree has been left
-  if (_data->DirectionSignX && _data->Location.x == 0) {
+  if (_data->DirectionSignX && _data->Location.x == 0)
     _data->Location.x = ULONG_MAX;
-    remainInBlock = false;
-  } else if (!_data->DirectionSignX && _data->Location.x == ULONG_MAX) {
+  else if (!_data->DirectionSignX && _data->Location.x == ULONG_MAX)
     _data->Location.x = 0;
-    remainInBlock = false;
-  }
 
-  if (_data->DirectionSignY && _data->Location.y == 0) {
+  if (_data->DirectionSignY && _data->Location.y == 0)
     _data->Location.y = ULONG_MAX;
-    remainInBlock = false;
-  } else if (!_data->DirectionSignY && _data->Location.y == ULONG_MAX) {
+  else if (!_data->DirectionSignY && _data->Location.y == ULONG_MAX)
     _data->Location.y = 0;
-    remainInBlock = false;
-  }
 
-  if (_data->DirectionSignZ && _data->Location.z == 0) {
+  if (_data->DirectionSignZ && _data->Location.z == 0)
     _data->Location.z = ULONG_MAX;
-    remainInBlock = false;
-  } else if (!_data->DirectionSignZ && _data->Location.z == ULONG_MAX) {
+  else if (!_data->DirectionSignZ && _data->Location.z == ULONG_MAX)
     _data->Location.z = 0;
-    remainInBlock = false;
-  }
 
   setConeDepth(_data);
-
-  return remainInBlock;
 }
 
-bool comparePositions(uchar depth, uchar position, WorkingData *_data) {
+uchar comparePositions(uchar depth, ulong3 previousLocation, WorkingData *_data) {
   uchar newPosition = chunkPosition(depth, _data->Location);
-  return ((position & 1) == _data->DirectionSignX && (newPosition & 1) != _data->DirectionSignX) ||
-         (((position >> 1) & 1) == _data->DirectionSignY && ((newPosition >> 1) & 1) != _data->DirectionSignY) ||
-         (((position >> 2) & 1) == _data->DirectionSignZ && ((newPosition >> 2) & 1) != _data->DirectionSignZ);
+  uchar previousPosition = chunkPosition(depth, previousLocation);
+  while (((previousPosition & 1) == _data->DirectionSignX && (newPosition & 1) != _data->DirectionSignX) ||
+         (((previousPosition >> 1) & 1) == _data->DirectionSignY && ((newPosition >> 1) & 1) != _data->DirectionSignY) ||
+         (((previousPosition >> 2) & 1) == _data->DirectionSignZ && ((newPosition >> 2) & 1) != _data->DirectionSignZ)) {
+    if (depth == 1)
+      break;
+    depth--;
+    newPosition = chunkPosition(depth, _data->Location);
+    previousPosition = chunkPosition(depth, previousLocation);
+  }
+  return depth;
 }
 
 // Sets chunk and determines whether the ray hits the octree
@@ -875,8 +861,8 @@ WorkingData setup(int2 coord, TraceInputData _input) {
   float matRot1x = (0 - sinU) * cosV;
   float matRot2x = sinV;
   data.Direction = (float3)(_input.Facing[0] * matRot0x + _input.Facing[3] * matRot1x + _input.Facing[6] * matRot2x,
-                        _input.Facing[1] * matRot0x + _input.Facing[4] * matRot1x + _input.Facing[7] * matRot2x,
-                        _input.Facing[2] * matRot0x + _input.Facing[5] * matRot1x + _input.Facing[8] * matRot2x);
+                            _input.Facing[1] * matRot0x + _input.Facing[4] * matRot1x + _input.Facing[7] * matRot2x,
+                            _input.Facing[2] * matRot0x + _input.Facing[5] * matRot1x + _input.Facing[8] * matRot2x);
   data.InvDirection = (float3)(native_divide(1, data.Direction.x), native_divide(1, data.Direction.y), native_divide(1, data.Direction.z));
   data.DirectionSignX = data.Direction.x >= 0;
   data.DirectionSignY = data.Direction.y >= 0;
@@ -1152,7 +1138,7 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
                        global ChildRequest *childRequests, __write_only image2d_t outputImage, TraceInputData _input) {
   uchar depth = 1;
   uint localAddress;
-  uchar previousChunkPosition;
+  ulong3 previousLocation;
   uint x = get_global_id(0);
   uint y = get_global_id(1);
   int2 coord = (int2)(x, y);
@@ -1175,19 +1161,13 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
     localAddress = powSum(depth - 1) + baseLocation(depth, _data->Location);
     if (depth <= _data->N && (bases[localAddress] >> (chunkPosition(depth, _data->Location) * 2) & 2) != 2) {
       // current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
-      previousChunkPosition = chunkPosition(depth - 1, _data->Location);
-      if (!traverseChunk(depth, _data) && depth != 1) {
-        depth--;
-        // check if traversal stepped out of parent chunk as well
-        if (depth != 1 && comparePositions(depth, previousChunkPosition, _data)) {
-          depth--;
-        }
-      }
-
+      previousLocation = _data->Location;
+      traverseChunk(depth, _data);
       if (leaving(_data)) {
-        writeData(outputImage, _data);
+        writeBackgroundData(outputImage, _data);
         return;
       }
+      depth = comparePositions(depth, previousLocation, _data);
     } else {
       if (depth < _data->N) {
         // Still traversing base chunks
@@ -1211,17 +1191,13 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
           // Check if current block chunk contains geometry
           if (((blocks[localAddress].Chunk >> (chunkPosition(depth, _data->Location) * 2)) & 2) != 2) {
             // current block chunk has no geometry, move to edge of chunk and go up a level if this is the edge
-            previousChunkPosition = chunkPosition(depth - 1, _data->Location);
-            if (!traverseChunk(depth, _data)) {
-              depth--;
-              if (comparePositions(depth, previousChunkPosition, _data)) {
-                depth--;
-              }
-            }
+            previousLocation = _data->Location;
+            traverseChunk(depth, _data);
             if (leaving(_data)) {
-              writeData(outputImage, _data);
+              writeBackgroundData(outputImage, _data);
               return;
             }
+            depth = comparePositions(depth, previousLocation, _data);
           } else {
             // C value is too diffuse to use
             if (_data->ConeDepth < (_data->N + 2)) {

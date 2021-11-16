@@ -36,8 +36,8 @@ namespace SvoTracer
 					for (uint j = 0; j < input.ScreenSize.X; j++)
 						try
 						{
-							KernelMirror.x = i;
-							KernelMirror.y = j;
+							KernelMirror.y = i;
+							KernelMirror.x = j;
 							KernelMirror.VoxelTrace(_tree.BaseBlocks, _tree.Blocks, usage, ref childRequestId, childRequests, $"Success for {j} {i}: ", input);
 						}
 						catch (Exception e)

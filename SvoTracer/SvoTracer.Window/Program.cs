@@ -30,12 +30,12 @@ namespace SvoTracer.Window
 				treeManager.SaveTree(treeName, builder.BuildTree(N, maxDepth, uint.MaxValue / 64));
 			var tree = treeManager.LoadTree(treeName);
 
-
 			var input = new TraceInputData()
 			{
 				Origin = new(-2f, 0.5f, 0.5f),
-				//Origin = new(0.2f, 0.59f, 0.59f),
+				//Origin = new(0.28446704f, 0.60931504f, 0.32085463f),
 				Facing = OpenTK.Mathematics.Matrix3.Identity,
+				//Facing = new OpenTK.Mathematics.Matrix3(0.74381626f, -0.46841022f, -0.4767906f, 0.53287965f, 0.84619105f, 0f, 0.40345594f, -0.254072f, 0.87901694f),
 				FoV = new((float)Math.PI / 4f, (float)Math.PI / 4f),
 				DoF = new(0, 0.169f),
 				MaxOpacity = 200,

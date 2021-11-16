@@ -67,29 +67,7 @@ namespace SvoTracer.Domain
 			var range = coordinates.CoordinateRanges(depth);
 			var normal = getNormal((range.x.min, range.x.max), (range.y.min, range.y.max), (range.z.min, range.z.max));
 			var colour = getColour((range.x.min, range.x.max), (range.y.min, range.y.max), (range.z.min, range.z.max));
-			Color c = Color.Black;
-			switch (depth)
-			{
-				case 5:
-					c = Color.Yellow;
-					break;
-				case 6:
-					c = Color.Red;
-					break;
-				case 7:
-					c = Color.Blue;
-					break;
-				case 8:
-					c = Color.Green;
-					break;
-				case 9:
-					c = Color.Purple;
-					break;
-				case 10:
-					c = Color.Orange;
-					break;
-			}
-			colour = new byte[] { c.R, c.B, c.G };
+			
 			return new Block()
 			{
 				Chunk = MakeChunk(coordinates, depth),
