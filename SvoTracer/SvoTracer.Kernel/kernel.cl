@@ -227,15 +227,16 @@ bool saveVoxelTrace(BlockData blockData, WorkingData *_data) {
   if (_data->Opacity < _data->MaxOpacity) {
 
     float3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
-    // _data->ColourR = normal.x;
-    // _data->ColourB = normal.y;
-    // _data->ColourG = normal.z;
     float3 reflection = _data->Direction - (2 * dot(_data->Direction, normal) * normal);
-    reflection += (float3)(1, 1, 1);
-    reflection *= 255;
-    _data->ColourR = native_divide(blockData.ColourR + reflection.x, 510.0f);
-    _data->ColourB = native_divide(blockData.ColourB + reflection.y, 510.0f);
-    _data->ColourG = native_divide(blockData.ColourG + reflection.z, 510.0f);
+    float shade = (dot(reflection, (float3)(1, 0, 0)) + 1) / 2.0f;
+    _data->ColourR = shade;
+    _data->ColourB = shade;
+    _data->ColourG = shade;
+    // reflection += (float3)(1, 1, 1);
+    // reflection *= 255;
+    // _data->ColourR = native_divide(blockData.ColourR + reflection.x, 510.0f);
+    // _data->ColourB = native_divide(blockData.ColourB + reflection.y, 510.0f);
+    // _data->ColourG = native_divide(blockData.ColourG + reflection.z, 510.0f);
     _data->Opacity = _data->Opacity + blockData.Opacity;
   }
   return true;
