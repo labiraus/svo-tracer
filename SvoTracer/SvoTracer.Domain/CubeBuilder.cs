@@ -9,18 +9,20 @@ namespace SvoTracer.Domain
 	public class CubeBuilder : TreeBuilder
 	{
 		(float min, float max) x0, y0, z0;
-		Vector3 normal1;
 		(float min, float max) x1, y1, z1;
-		Vector3 normal2;
 		(float min, float max) x2, y2, z2;
-		Vector3 normal3;
 		(float min, float max) x3, y3, z3;
-		Vector3 normal4;
 		(float min, float max) x4, y4, z4;
-		Vector3 normal5;
 		(float min, float max) x5, y5, z5;
-		Vector3 normal6;
 		(float min, float max) x6, y6, z6;
+
+
+		Plane plane1;
+		Plane plane2;
+		Plane plane3;
+		Plane plane4;
+		Plane plane5;
+		Plane plane6;
 
 		public CubeBuilder(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 e, Vector3 f, Vector3 g, Vector3 h)
 		{
@@ -46,12 +48,34 @@ namespace SvoTracer.Domain
 			y6 = (new[] { e.Y, f.Y, g.Y, h.Y }.Min(), new[] { e.Y, f.Y, g.Y, h.Y }.Max());
 			z6 = (new[] { e.Z, f.Z, g.Z, h.Z }.Min(), new[] { e.Z, f.Z, g.Z, h.Z }.Max());
 
-			normal1 = Plane.CreateFromVertices(a, b, c).Normal;
-			normal2 = Plane.CreateFromVertices(a, b, e).Normal;
-			normal3 = Plane.CreateFromVertices(b, c, f).Normal;
-			normal4 = Plane.CreateFromVertices(c, d, g).Normal;
-			normal5 = Plane.CreateFromVertices(a, d, e).Normal;
-			normal6 = Plane.CreateFromVertices(e, f, g).Normal;
+			plane1.Normal = Plane.CreateFromVertices(a, b, c).Normal;
+			plane2.Normal = Plane.CreateFromVertices(a, b, e).Normal;
+			plane3.Normal = Plane.CreateFromVertices(b, c, f).Normal;
+			plane4.Normal = Plane.CreateFromVertices(c, d, g).Normal;
+			plane5.Normal = Plane.CreateFromVertices(a, d, e).Normal;
+			plane6.Normal = Plane.CreateFromVertices(e, f, g).Normal;
+		}
+
+		public CubeBuilder(Vector3 min, Vector3 max)
+		{
+			x0 = (min.X, max.X);
+			y0 = (min.Y, max.Y);
+			z0 = (min.Z, max.Z);
+
+			Vector3 a = new(x0.min, y0.min, z0.min);
+			Vector3 b = new(x0.max, y0.min, z0.min);
+			Vector3 c = new(x0.min, y0.max, z0.min);
+			Vector3 d = new(x0.max, y0.max, z0.min);
+			Vector3 e = new(x0.min, y0.min, z0.max);
+			Vector3 f = new(x0.max, y0.min, z0.max);
+			Vector3 g = new(x0.min, y0.max, z0.max);
+
+			plane1 = Plane.CreateFromVertices(a, b, c);
+			plane2 = Plane.CreateFromVertices(a, b, e);
+			plane3 = Plane.CreateFromVertices(b, c, f);
+			plane4 = Plane.CreateFromVertices(c, d, g);
+			plane5 = Plane.CreateFromVertices(a, d, e);
+			plane6 = Plane.CreateFromVertices(e, f, g);
 		}
 
 		protected override bool ContainsGeo((float min, float max) x, (float min, float max) y, (float min, float max) z) =>
@@ -67,7 +91,7 @@ namespace SvoTracer.Domain
 			var range = coordinates.CoordinateRanges(depth);
 			var normal = getNormal((range.x.min, range.x.max), (range.y.min, range.y.max), (range.z.min, range.z.max));
 			var colour = getColour((range.x.min, range.x.max), (range.y.min, range.y.max), (range.z.min, range.z.max));
-			
+
 			return new Block()
 			{
 				Chunk = MakeChunk(coordinates, depth),
@@ -88,22 +112,45 @@ namespace SvoTracer.Domain
 		private (short pitch, short yaw) getNormal((float, float) x, (float, float) y, (float, float) z)
 		{
 			var intersect = intersections(x, y, z);
-			switch (intersect)
-			{
-				case Face.Red:
-					return ((short)(short.MaxValue * Math.Asin(normal1.Z)), (short)(short.MaxValue * Math.Atan2(normal1.X, -normal1.Y)));
-				case Face.Green:
-					return ((short)(short.MaxValue * Math.Asin(normal2.Z)), (short)(short.MaxValue * Math.Atan2(normal2.X, -normal2.Y)));
-				case Face.Blue:
-					return ((short)(short.MaxValue * Math.Asin(normal3.Z)), (short)(short.MaxValue * Math.Atan2(normal3.X, -normal3.Y)));
-				case Face.Yellow:
-					return ((short)(short.MaxValue * Math.Asin(normal4.Z)), (short)(short.MaxValue * Math.Atan2(normal4.X, -normal4.Y)));
-				case Face.Cyan:
-					return ((short)(short.MaxValue * Math.Asin(normal5.Z)), (short)(short.MaxValue * Math.Atan2(normal5.X, -normal5.Y)));
-				case Face.Magenta:
-					return ((short)(short.MaxValue * Math.Asin(normal6.Z)), (short)(short.MaxValue * Math.Atan2(normal6.X, -normal6.Y)));
-			}
-			return (0, 0);
+			int i = 0;
+			Vector3 finalNormal = Vector3.Zero;
+			foreach (Enum value in Enum.GetValues(intersect.GetType()))
+				if (intersect.HasFlag(value))
+				{
+					i++;
+					Vector3 normal;
+					switch (value)
+					{
+						case Face.Front:
+							normal = plane1.Normal;
+							break;
+						case Face.Bottom:
+							normal = plane2.Normal;
+							break;
+						case Face.Left:
+							normal = plane3.Normal;
+							break;
+						case Face.Back:
+							normal = plane4.Normal;
+							break;
+						case Face.Top:
+							normal = plane5.Normal;
+							break;
+						case Face.Right:
+							normal = plane6.Normal;
+							break;
+						default:
+							continue;
+					}
+
+					if (finalNormal + normal != Vector3.Zero)
+						finalNormal += normal;
+				}
+			if (i == 0)
+				return (0, 0);
+
+			finalNormal /= finalNormal.Length();
+			return ((short)(short.MaxValue * Math.Asin(finalNormal.Z)), (short)(short.MaxValue * Math.Atan2(finalNormal.X, -finalNormal.Y)));
 		}
 
 		private byte[] getColour((float, float) x, (float, float) y, (float, float) z)
@@ -121,31 +168,31 @@ namespace SvoTracer.Domain
 
 		private Face intersections((float min, float max) x, (float min, float max) y, (float min, float max) z)
 		{
-			int intersections = 0;
-			intersections += (x.min < x1.max && x.max > x1.min &&
+			Face intersections = Face.None;
+			intersections |= (x.min < x1.max && x.max > x1.min &&
 				y.min < y1.max && y.max > y1.min &&
-				z.min < z1.max && z.max > z1.min) ? 1 : 0;
+				z.min < z1.max && z.max > z1.min) ? Face.Front : 0;
 
-			intersections += (x.min < x2.max && x.max > x2.min &&
+			intersections |= (x.min < x2.max && x.max > x2.min &&
 				y.min < y2.max && y.max > y2.min &&
-				z.min < z2.max && z.max > z2.min) ? 2 : 0;
+				z.min < z2.max && z.max > z2.min) ? Face.Bottom : 0;
 
-			intersections += (x.min < x3.max && x.max > x3.min &&
+			intersections |= (x.min < x3.max && x.max > x3.min &&
 				y.min < y3.max && y.max > y3.min &&
-				z.min < z3.max && z.max > z3.min) ? 4 : 0;
+				z.min < z3.max && z.max > z3.min) ? Face.Left : 0;
 
-			intersections += (x.min < x4.max && x.max > x4.min &&
+			intersections |= (x.min < x4.max && x.max > x4.min &&
 				y.min < y4.max && y.max > y4.min &&
-				z.min < z4.max && z.max > z4.min) ? 8 : 0;
+				z.min < z4.max && z.max > z4.min) ? Face.Back : 0;
 
-			intersections += (x.min < x5.max && x.max > x5.min &&
+			intersections |= (x.min < x5.max && x.max > x5.min &&
 				y.min < y5.max && y.max > y5.min &&
-				z.min < z5.max && z.max > z5.min) ? 16 : 0;
+				z.min < z5.max && z.max > z5.min) ? Face.Top : 0;
 
-			intersections += (x.min < x6.max && x.max > x6.min &&
+			intersections |= (x.min < x6.max && x.max > x6.min &&
 				y.min < y6.max && y.max > y6.min &&
-				z.min < z6.max && z.max > z6.min) ? 32 : 0;
-			return (Face)intersections;
+				z.min < z6.max && z.max > z6.min) ? Face.Right : 0;
+			return intersections;
 		}
 
 		private byte[] faceColour(Face intersect)
@@ -158,22 +205,22 @@ namespace SvoTracer.Domain
 					i++;
 					switch (value)
 					{
-						case Face.Red:
+						case Face.Front:
 							colour = new Vector3(colour.X + 1f, colour.Y + 0f, colour.Z + 0f);
 							break;
-						case Face.Green:
+						case Face.Bottom:
 							colour = new Vector3(colour.X + 0f, colour.Y + 1f, colour.Z + 0f);
 							break;
-						case Face.Blue:
+						case Face.Left:
 							colour = new Vector3(colour.X + 0f, colour.Y + 0f, colour.Z + 1f);
 							break;
-						case Face.Yellow:
+						case Face.Back:
 							colour = new Vector3(colour.X + 1f, colour.Y + 1f, colour.Z + 0f);
 							break;
-						case Face.Cyan:
+						case Face.Top:
 							colour = new Vector3(colour.X + 0f, colour.Y + 1f, colour.Z + 1f);
 							break;
-						case Face.Magenta:
+						case Face.Right:
 							colour = new Vector3(colour.X + 1f, colour.Y + 0f, colour.Z + 1f);
 							break;
 					}
@@ -188,13 +235,13 @@ namespace SvoTracer.Domain
 		[Flags]
 		enum Face : ushort
 		{
-			Black = 0,
-			Red = 1,
-			Green = 2,
-			Blue = 4,
-			Yellow = 8,
-			Cyan = 16,
-			Magenta = 32,
+			None = 0,
+			Front = 1,  //Red
+			Bottom = 2, //Green
+			Left = 4,   //Blue
+			Back = 8,   //Yellow
+			Top = 16,   //Cyan
+			Right = 32, //Magenta
 		}
 	}
 }

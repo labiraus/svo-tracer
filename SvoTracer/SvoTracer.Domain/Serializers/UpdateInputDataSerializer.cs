@@ -14,7 +14,7 @@ namespace SvoTracer.Domain.Serializers
 		{
 			var ms = new MemoryStream();
 			var writer = new BinaryWriter(ms);
-			writer.Write(data.N);
+			writer.Write(data.BaseDepth);
 			writer.Write(data.Tick);
 			writer.Write(data.MaxChildRequestId);
 			writer.Write(data.MemorySize);

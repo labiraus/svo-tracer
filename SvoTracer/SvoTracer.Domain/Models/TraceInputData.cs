@@ -14,7 +14,7 @@ namespace SvoTracer.Domain.Models
 			int screenSizeX,
 			int screenSizeY,
 			byte maxOpacity,
-			byte n,
+			byte baseDepth,
 			ushort tick,
 			uint maxChildRequestId)
 		{
@@ -24,7 +24,7 @@ namespace SvoTracer.Domain.Models
 			DoF = new Vector2(doF.X, doF.Y);
 			ScreenSize = new Vector2i(screenSizeX, screenSizeY);
 			MaxOpacity = maxOpacity;
-			N = n;
+			BaseDepth = baseDepth;
 			Tick = tick;
 			MaxChildRequestId = maxChildRequestId;
 		}
@@ -41,7 +41,7 @@ namespace SvoTracer.Domain.Models
 		public Vector2i ScreenSize;
 		public byte MaxOpacity;
 		//Depth of inviolate memory(Specific to voxels)
-		public byte N;
+		public byte BaseDepth;
 		public ushort Tick;
 		public uint MaxChildRequestId;
 	}

@@ -1,6 +1,6 @@
 typedef struct {
-  short NormalPitch;
-  short NormalYaw;
+  ushort NormalPitch;
+  ushort NormalYaw;
   uchar ColourR;
   uchar ColourB;
   uchar ColourG;
@@ -78,13 +78,13 @@ typedef struct {
   uint2 ScreenSize;
   uchar MaxOpacity;
   // Depth of inviolate memory(Specific to voxels)
-  uchar N;
+  uchar BaseDepth;
   ushort Tick;
   uint MaxChildRequestId;
 } TraceInputData;
 
 typedef struct {
-  uchar N;
+  uchar BaseDepth;
   ushort Tick;
   uint MaxChildRequestId;
   uint MemorySize;
@@ -113,7 +113,7 @@ typedef struct {
   float ColourG;
   float Opacity;
   // Depth of inviolate memory(Specific to voxels)
-  uchar N;
+  uchar BaseDepth;
   // Signs of the vector direction
   bool DirectionSignX;
   bool DirectionSignY;
@@ -163,12 +163,24 @@ uint powSum(uchar depth) {
   return output;
 }
 
+float3 normalVector(ushort pitch, ushort yaw) {
+  // yaw * 2pi/ushort max
+  float fYaw = yaw * M_PI_F / 32767.5f;
+  float fPitch = pitch * M_PI_F / 65535.0f;
+  float sinYaw = native_sin(fYaw);
+  float cosYaw = native_cos(fYaw);
+  float sinPitch = native_sin(fPitch);
+  float cosPitch = native_cos(fPitch);
+
+  return (float3)(cosYaw * cosPitch, sinYaw * cosPitch, sinPitch);
+}
+
 uchar chunkPosition(uchar depth, ulong3 location) {
   return ((location.x >> (64 - depth - 1) & 1) + ((location.y >> (64 - depth - 1) & 1) << 1) + ((location.z >> (64 - depth - 1) & 1) << 2));
 }
 
 // Deduces array offset of a base's location given its depth
-// Bases are stored as a dense octree down to depth N
+// Bases are stored as a dense octree down to depth BaseDepth
 uint baseLocation(uchar depth, ulong3 location) {
   uint output = 0;
   for (uchar i = 0; i < depth; i++)
@@ -213,10 +225,17 @@ void writeData(__write_only image2d_t outputImage, WorkingData *_data) {
 // Combine _data colour+opacity with background colour
 bool saveVoxelTrace(BlockData blockData, WorkingData *_data) {
   if (_data->Opacity < _data->MaxOpacity) {
-    _data->ColourR = native_divide(blockData.ColourR, 255.0);
-    _data->ColourB = native_divide(blockData.ColourB, 255.0);
-    _data->ColourG = native_divide(blockData.ColourG, 255.0);
 
+    float3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
+    // _data->ColourR = normal.x;
+    // _data->ColourB = normal.y;
+    // _data->ColourG = normal.z;
+    float3 reflection = _data->Direction - (2 * dot(_data->Direction, normal) * normal);
+    reflection += (float3)(1, 1, 1);
+    reflection *= 255;
+    _data->ColourR = native_divide(blockData.ColourR + reflection.x, 510.0f);
+    _data->ColourB = native_divide(blockData.ColourB + reflection.y, 510.0f);
+    _data->ColourG = native_divide(blockData.ColourG + reflection.z, 510.0f);
     _data->Opacity = _data->Opacity + blockData.Opacity;
   }
   return true;
@@ -224,7 +243,7 @@ bool saveVoxelTrace(BlockData blockData, WorkingData *_data) {
 
 // Combine _data colour+opacity with background colour and write to output
 void writeBackgroundData(__write_only image2d_t outputImage, WorkingData *_data) {
-  saveVoxelTrace(background(_data), _data);
+  // saveVoxelTrace(background(_data), _data);
   writeData(outputImage, _data);
 }
 
@@ -868,7 +887,7 @@ WorkingData setup(int2 coord, TraceInputData _input) {
   data.DirectionSignY = data.Direction.y >= 0;
   data.DirectionSignZ = data.Direction.z >= 0;
   data.Origin = (float3)(_input.Origin[0], _input.Origin[1], _input.Origin[2]);
-  data.N = _input.N;
+  data.BaseDepth = _input.BaseDepth;
   data.Tick = _input.Tick;
   data.MaxChildRequestId = _input.MaxChildRequestId;
   data.DoF = (float2)(_input.DoF[0], _input.DoF[1]);
@@ -979,8 +998,8 @@ uint findAddress(global Block *blocks, global Usage *usage, global uint *childRe
                  global bool *parentResidency, global Parent *parents, global uint2 *dereferenceQueue, global int *dereferenceRemaining,
                  global int *semaphor, global ulong *addresses, UpdateInputData inputData, uint address, uint depth) {
   ulong3 location = (ulong3)(addresses[address], addresses[address + 1], addresses[address + 2]);
-  address = baseLocation(inputData.N + 2, location);
-  for (uchar i = inputData.N + 2; i < depth; i++) {
+  address = baseLocation(inputData.BaseDepth + 2, location);
+  for (uchar i = inputData.BaseDepth + 2; i < depth; i++) {
     if (usage[address >> 3].Tick < USHRT_MAX - 1) {
       usage[address >> 3].Tick = inputData.Tick;
     }
@@ -1153,13 +1172,13 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
 
   // block location at each layer of depth
   uint depthHeap[64];
-  depthHeap[_data->N + 1] = UINT_MAX;
+  depthHeap[_data->BaseDepth + 1] = UINT_MAX;
 
   // iterate over base chunks
   while (true) {
     // check base chunks to see if current location contains geometry and traverse if it doesn't
     localAddress = powSum(depth - 1) + baseLocation(depth, _data->Location);
-    if (depth <= _data->N && (bases[localAddress] >> (chunkPosition(depth, _data->Location) * 2) & 2) != 2) {
+    if (depth <= _data->BaseDepth && (bases[localAddress] >> (chunkPosition(depth, _data->Location) * 2) & 2) != 2) {
       // current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
       previousLocation = _data->Location;
       traverseChunk(depth, _data);
@@ -1169,16 +1188,16 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
       }
       depth = comparePositions(depth, previousLocation, _data);
     } else {
-      if (depth < _data->N) {
+      if (depth < _data->BaseDepth) {
         // Still traversing base chunks
         depth++;
       } else {
         // Traversing blocks
-        depth = _data->N + 2;
+        depth = _data->BaseDepth + 2;
 
         // iterate over blocks
-        while (depth > (_data->N + 1)) {
-          if (depth == _data->N + 2)
+        while (depth > (_data->BaseDepth + 1)) {
+          if (depth == _data->BaseDepth + 2)
             localAddress = baseLocation(depth, _data->Location);
           else
             localAddress = blocks[depthHeap[depth - 1]].Child + chunkPosition(depth - 1, _data->Location);
@@ -1200,8 +1219,8 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
             depth = comparePositions(depth, previousLocation, _data);
           } else {
             // C value is too diffuse to use
-            if (_data->ConeDepth < (_data->N + 2)) {
-              depth = _data->N + 2;
+            if (_data->ConeDepth < (_data->BaseDepth + 2)) {
+              depth = _data->BaseDepth + 2;
               if (saveVoxelTrace(blocks[depthHeap[depth]].Data, _data)) {
                 writeData(outputImage, _data);
                 return;
@@ -1235,7 +1254,7 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
             }
           }
         }
-        depth = _data->N;
+        depth = _data->BaseDepth;
       }
     }
   }

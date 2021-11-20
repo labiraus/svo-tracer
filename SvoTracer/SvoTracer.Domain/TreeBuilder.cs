@@ -42,46 +42,46 @@ namespace SvoTracer.Domain
 		/// <summary>
 		/// Builds an octree using inherited class's MakeBlock method
 		/// </summary>
-		/// <param name="N">Depth of inviolate tree</param>
+		/// <param name="baseDepth">Depth of inviolate tree</param>
 		/// <param name="maxDepth">Initial tree depth</param>
 		/// <param name="maxSize">Maximum number of blocks available</param>
 		/// <returns>Fully build Octree</returns>
-		public Octree BuildTree(byte N, byte maxDepth, uint maxSize = 0)
+		public Octree BuildTree(byte baseDepth, byte maxDepth, uint maxSize = 0)
 		{
 			// Increases MaxSize to allow at least 1 layer of block data
-			maxSize = maxSize > (uint)(1 << (3 * N + 6)) ? maxSize : (uint)(1 << (3 * N + 6));
+			maxSize = maxSize > (uint)(1 << (3 * baseDepth + 6)) ? maxSize : (uint)(1 << (3 * baseDepth + 6));
 			Octree tree = new()
 			{
-				N = N,
-				BaseBlocks = new ushort[PowSum(N)],
+				BaseDepth = baseDepth,
+				BaseBlocks = new ushort[PowSum(baseDepth)],
 				Blocks = new Block[maxSize]
 			};
 			BuildBaseChunks(ref tree);
 			(bool[] childrenNeeded, Queue<uint> freeAddresses) = PopulateInitialBlocks(ref tree);
 
-			//Push all addresses from N+3 and over into free address stack
-			if ((maxSize >> 3) > (uint)(1 << (3 * (tree.N + 1))))
-				for (uint i = (uint)(1 << (3 * (tree.N + 1))); i < (maxSize >> 3); i++)
+			//Push all addresses from BaseDepth+3 and over into free address stack
+			if ((maxSize >> 3) > (uint)(1 << (3 * (tree.BaseDepth + 1))))
+				for (uint i = (uint)(1 << (3 * (tree.BaseDepth + 1))); i < (maxSize >> 3); i++)
 					freeAddresses.Enqueue(i);
 
-			if (maxDepth > (ushort)(N + 2))
+			if (maxDepth > (ushort)(baseDepth + 2))
 			{
-				//Iterates over level N+2 and builds the requested child blocks
-				for (uint x = 0; x < (uint)(1 << N + 2); x++)
+				//Iterates over level BaseDepth+2 and builds the requested child blocks
+				for (uint x = 0; x < (uint)(1 << baseDepth + 2); x++)
 				{
-					var xcoord = IntToBinaryCoordinate(x, (byte)(N + 2));
-					for (uint y = 0; y < (uint)(1 << N + 2); y++)
+					var xcoord = IntToBinaryCoordinate(x, (byte)(baseDepth + 2));
+					for (uint y = 0; y < (uint)(1 << baseDepth + 2); y++)
 					{
-						var ycoord = IntToBinaryCoordinate(y, (byte)(N + 2));
-						for (uint z = 0; z < (uint)(1 << N + 2); z++)
+						var ycoord = IntToBinaryCoordinate(y, (byte)(baseDepth + 2));
+						for (uint z = 0; z < (uint)(1 << baseDepth + 2); z++)
 						{
 							var initialAddress = Interleave(x, y, z);
 							if (childrenNeeded[initialAddress])
 							{
-								var zcoord = IntToBinaryCoordinate(z, (byte)(N + 2));
+								var zcoord = IntToBinaryCoordinate(z, (byte)(baseDepth + 2));
 								uint address = freeAddresses.Dequeue() << 3;
 								tree.Blocks[initialAddress].Child = address;
-								BuildBlocks(ref tree, freeAddresses, address, new Location(xcoord, ycoord, zcoord), (byte)(N + 3), maxDepth);
+								BuildBlocks(ref tree, freeAddresses, address, new Location(xcoord, ycoord, zcoord), (byte)(baseDepth + 3), maxDepth);
 							}
 						}
 					}
@@ -98,8 +98,8 @@ namespace SvoTracer.Domain
 
 		private void BuildBaseChunks(ref Octree tree)
 		{
-			//Creates base levels 1 to N
-			for (byte depth = 1; depth <= tree.N; depth++)
+			//Creates base levels 1 to BaseDepth
+			for (byte depth = 1; depth <= tree.BaseDepth; depth++)
 			{
 				for (uint z = 0; z < 1 << depth; z++)
 				{
@@ -119,22 +119,22 @@ namespace SvoTracer.Domain
 		}
 
 		/// <summary>
-		/// Iterates over level N+1 base chunks and creates Blocks at the N+2 level
+		/// Iterates over level BaseDepth+1 base chunks and creates Blocks at the BaseDepth+2 level
 		/// </summary>
 		/// <param name="tree"></param>
 		/// <param name="freeAddresses"></param>
 		/// <returns>Whether blocks require children to be populated</returns>
 		private (bool[] childrenNeeded, Queue<uint> freeAddresses) PopulateInitialBlocks(ref Octree tree)
 		{
-			byte blockDepth = (byte)(tree.N + 2);
+			byte blockDepth = (byte)(tree.BaseDepth + 2);
 			bool[] childrenNeeded = new bool[(uint)(1 << (3 * blockDepth))];
-			uint baseStart = PowSum((byte)(tree.N - 1));
-			byte scanDepth = (byte)(tree.N + 1);
+			uint baseStart = PowSum((byte)(tree.BaseDepth - 1));
+			byte scanDepth = (byte)(tree.BaseDepth + 1);
 			uint scanWidth = (uint)1 << scanDepth;
 			var empytAddresses = new List<uint>();
 			for (uint z = 0; z < scanWidth; z++)
 			{
-				// Populates the first N+1 coordinates with 
+				// Populates the first BaseDepth+1 coordinates with 
 				var zcoord = IntToBinaryCoordinate(z, scanDepth);
 				for (uint y = 0; y < scanWidth; y++)
 				{
@@ -144,7 +144,7 @@ namespace SvoTracer.Domain
 						var xcoord = IntToBinaryCoordinate(x, scanDepth);
 						var basePosition = Interleave(x, y, z);
 						if ((tree.BaseBlocks[baseStart + (basePosition >> 3)] >> (int)((basePosition & 7) * 2) & 0b11) == 0b11)
-							//If there's children to be created, create 8 N+2 blocks
+							//If there's children to be created, create 8 BaseDepth+2 blocks
 							for (uint z2 = 0; z2 < 2; z2++)
 								for (uint y2 = 0; y2 < 2; y2++)
 									for (uint x2 = 0; x2 < 2; x2++)
@@ -282,10 +282,10 @@ namespace SvoTracer.Domain
 
 		private bool checkTree(Octree tree, byte maxDepth)
 		{
-			uint baseStart = PowSum((byte)(tree.N - 1));
-			for (uint x = 0; x < (uint)(1 << tree.N + 1); x++)
-				for (uint y = 0; y < (uint)(1 << tree.N + 1); y++)
-					for (uint z = 0; z < (uint)(1 << tree.N + 1); z++)
+			uint baseStart = PowSum((byte)(tree.BaseDepth - 1));
+			for (uint x = 0; x < (uint)(1 << tree.BaseDepth + 1); x++)
+				for (uint y = 0; y < (uint)(1 << tree.BaseDepth + 1); y++)
+					for (uint z = 0; z < (uint)(1 << tree.BaseDepth + 1); z++)
 					{
 						var basePosition = Interleave(x, y, z);
 						int baseChunkLocation = (int)basePosition & 7;
@@ -300,7 +300,7 @@ namespace SvoTracer.Domain
 						{
 							var address = (basePosition << 3) + position;
 
-							if (!checkChildren(address, tree, (byte)(tree.N + 2), maxDepth))
+							if (!checkChildren(address, tree, (byte)(tree.BaseDepth + 2), maxDepth))
 								return false;
 						}
 					}

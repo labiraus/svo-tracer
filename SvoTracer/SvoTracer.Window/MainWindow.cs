@@ -50,17 +50,17 @@ namespace SvoTracer.Window
 
 		private void setupKernels(Octree octree)
 		{
-			_stateManager.TraceInput.N = octree.N;
-			_stateManager.UpdateInput.N = octree.N;
+			_stateManager.TraceInput.BaseDepth = octree.BaseDepth;
+			_stateManager.UpdateInput.BaseDepth = octree.BaseDepth;
 			_stateManager.UpdateInput.MemorySize = octree.BlockCount;
 			blockCount = octree.BlockCount;
 			parentMaxSize = 6000;
 
 			// Usage contains one element for every block for recording when it was last used
 			var usage = new Usage[octree.BlockCount >> 3];
-			var baseStart = (int)TreeBuilder.PowSum((byte)(octree.N - 1));
-			var range = TreeBuilder.PowSum(octree.N);
-			//This iterates over the N+1 level and makes blocks inviolate
+			var baseStart = (int)TreeBuilder.PowSum((byte)(octree.BaseDepth - 1));
+			var range = TreeBuilder.PowSum(octree.BaseDepth);
+			//This iterates over the BaseDepth+2 level and makes blocks inviolate
 			for (int i = 0; i < range - baseStart; i++)
 				for (int j = 3; j <= byte.MaxValue; j <<= 2)
 					if ((octree.BaseBlocks[i + baseStart] & j) == j)

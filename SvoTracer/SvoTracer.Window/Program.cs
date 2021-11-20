@@ -10,7 +10,7 @@ namespace SvoTracer.Window
 		[STAThread]
 		private static void Main(string[] args)
 		{
-			byte N = 4;
+			byte BaseDepth = 4;
 			byte maxDepth = 9;
 			var treeName = "test" + maxDepth;
 			var builder = new CubeBuilder(
@@ -24,10 +24,10 @@ namespace SvoTracer.Window
 				new Vector3(0.6f, 0.6f, 0.3f));
 			var treeManager = new TreeManager($"{Environment.CurrentDirectory}\\trees");
 
-			//treeManager.DeleteTree(treeName);
+			treeManager.DeleteTree(treeName);
 
 			if (!treeManager.TreeExists(treeName))
-				treeManager.SaveTree(treeName, builder.BuildTree(N, maxDepth, uint.MaxValue / 64));
+				treeManager.SaveTree(treeName, builder.BuildTree(BaseDepth, maxDepth, uint.MaxValue / 64));
 			var tree = treeManager.LoadTree(treeName);
 
 			var input = new TraceInputData()
@@ -41,7 +41,7 @@ namespace SvoTracer.Window
 				MaxOpacity = 200,
 				MaxChildRequestId = 6000,
 				ScreenSize = new(100, 100),
-				N = tree.N,
+				BaseDepth = tree.BaseDepth,
 			};
 
 			//new TestRun(tree).Run(input);

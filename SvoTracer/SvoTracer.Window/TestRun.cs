@@ -19,9 +19,9 @@ namespace SvoTracer
 			try
 			{
 				var usage = new Usage[_tree.BlockCount >> 3];
-				var baseStart = TreeBuilder.PowSum((byte)(_tree.N - 1));
-				var range = TreeBuilder.PowSum(_tree.N) << 3;
-				//This iterates over the N+1 level
+				var baseStart = TreeBuilder.PowSum((byte)(_tree.BaseDepth - 1));
+				var range = TreeBuilder.PowSum(_tree.BaseDepth) << 3;
+				//This iterates over the BaseDepth+1 level
 				for (int i = 0; i < range; i++)
 				{
 					if ((_tree.BaseBlocks[baseStart + (i >> 3)] >> ((i & 7) * 2) & 3) != 3)

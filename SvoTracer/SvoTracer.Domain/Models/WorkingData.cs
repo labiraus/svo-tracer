@@ -29,7 +29,7 @@ namespace SvoTracer.Domain.Models
 		public float ColourG;
 		public float Opacity;
 		//Depth of inviolate memory(Specific to voxels)
-		public byte N;
+		public byte BaseDepth;
 		//Signs of the vector direction
 		public bool DirectionSignX;
 		public bool DirectionSignY;

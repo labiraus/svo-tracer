@@ -30,7 +30,7 @@ typedef struct
     uint ScreenSize[2];
     float MaxOpacity;
     //Depth of inviolate memory(Specific to voxels)
-    uchar N;
+    uchar BaseDepth;
 } InputData;
 
 typedef struct
@@ -50,7 +50,7 @@ typedef struct
     //Max Opacity
     float MaxOpacity;
     //Depth of inviolate memory(Specific to voxels)
-    uchar N;
+    uchar BaseDepth;
     //Signs of the vector direction
     bool DirectionSignX;
     bool DirectionSignY;

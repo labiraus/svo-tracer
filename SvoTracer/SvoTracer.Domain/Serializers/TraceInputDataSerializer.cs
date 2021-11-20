@@ -33,7 +33,7 @@ namespace SvoTracer.Domain.Serializers
 			writer.Write(data.ScreenSize.X);
 			writer.Write(data.ScreenSize.Y);
 			writer.Write(data.MaxOpacity);
-			writer.Write(data.N);
+			writer.Write(data.BaseDepth);
 			writer.Write(data.Tick);
 			writer.Write(data.MaxChildRequestId);
 			return ms.ToArray();

@@ -12,7 +12,7 @@ namespace SvoTracer.Domain.Serializers
 	{
 		public static void Serialize(this Octree octree, BinaryWriter writer)
 		{
-			writer.Write(octree.N);
+			writer.Write(octree.BaseDepth);
 			writer.Write(octree.BlockCount);
 			foreach (var baseBlock in octree.BaseBlocks)
 				writer.Write(baseBlock);
@@ -22,12 +22,12 @@ namespace SvoTracer.Domain.Serializers
 
 		public static Octree Deserialize(BinaryReader reader)
 		{
-			var n = reader.ReadByte();
+			var baseDepth = reader.ReadByte();
 			var blockCount = reader.ReadUInt32();
-			var baseCount = TreeBuilder.PowSum(n);
+			var baseCount = TreeBuilder.PowSum(baseDepth);
 			var tree = new Octree
 			{
-				N = n,
+				BaseDepth = baseDepth,
 				BlockCount = blockCount,
 				BaseBlocks = new ushort[baseCount],
 				Blocks = new Block[blockCount]

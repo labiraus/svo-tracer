@@ -2,15 +2,14 @@
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using SvoTracer.Domain.Models;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace SvoTracer.Window
 {
 	public class StateManager
 	{
+		private const float flySpeed = 0.001f;
+		private const float turnSpeed = 20000.0f;
 		public TraceInputData TraceInput;
 		public UpdateInputData UpdateInput = new()
 		{
@@ -18,6 +17,7 @@ namespace SvoTracer.Window
 			Offset = uint.MaxValue / 4,
 		};
 		public Vector3 FacingEuler = new();
+		public Stopwatch timer = new();
 		public ushort Tick { get; set; } = 0;
 
 		public StateManager(TraceInputData input)
@@ -27,10 +27,13 @@ namespace SvoTracer.Window
 
 		public void ReadInput(MouseState mouseState, KeyboardState keyboardState)
 		{
+			timer.Stop();
+			float turn = turnSpeed/ timer.ElapsedMilliseconds;
+			float fly = timer.ElapsedMilliseconds * flySpeed;
 			if (mouseState.IsButtonDown(MouseButton.Left))
 			{
-				FacingEuler.Y += (mouseState.Delta.Y) / 1000.0f;
-				FacingEuler.Z -= (mouseState.Delta.X) / 1000.0f;
+				FacingEuler.Y += (mouseState.Delta.Y) / turn;
+				FacingEuler.Z -= (mouseState.Delta.X) / turn;
 
 				if (FacingEuler.X > Math.PI)
 					FacingEuler.X -= (float)Math.PI * 2;
@@ -53,20 +56,22 @@ namespace SvoTracer.Window
 
 			var relativeMovement = Vector3.Zero;
 			if (keyboardState.IsKeyDown(Keys.W) && !keyboardState.IsKeyDown(Keys.S))
-				relativeMovement.X = 0.005f;
+				relativeMovement.X = fly;
 			if (keyboardState.IsKeyDown(Keys.S) && !keyboardState.IsKeyDown(Keys.W))
-				relativeMovement.X = -0.005f;
+				relativeMovement.X = -fly;
 			if (keyboardState.IsKeyDown(Keys.D) && !keyboardState.IsKeyDown(Keys.A))
-				relativeMovement.Y = 0.005f;
+				relativeMovement.Y = fly;
 			if (keyboardState.IsKeyDown(Keys.A) && !keyboardState.IsKeyDown(Keys.D))
-				relativeMovement.Y = -0.005f;
+				relativeMovement.Y = -fly;
 			if (keyboardState.IsKeyDown(Keys.Space))
-				relativeMovement.Z = -0.005f;
+				relativeMovement.Z = -fly;
 			if (keyboardState.IsKeyDown(Keys.C))
-				relativeMovement.Z = 0.005f;
+				relativeMovement.Z = fly;
 
 			if (relativeMovement != Vector3.Zero)
 				TraceInput.Origin += Vector3.TransformRow(relativeMovement, TraceInput.Facing);
+			timer.Reset();
+			timer.Start();
 		}
 
 		public void UpdateScreenSize(Vector2i size)

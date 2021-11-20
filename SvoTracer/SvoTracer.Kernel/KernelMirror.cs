@@ -46,6 +46,11 @@ namespace SvoTracer.Kernel
 			return (float)Math.Cos((double)theta);
 		}
 
+		static float dot(Vector3 vec1, Vector3 vec2)
+		{
+			return Vector3.Dot(vec1, vec2);
+		}
+
 		/// <summary>
 		/// Converts a float between 0 and 1 into a ulong coordinate
 		/// </summary>
@@ -102,6 +107,20 @@ namespace SvoTracer.Kernel
 			return output;
 		}
 
+		static Vector3 normalVector(ushort pitch, ushort yaw)
+		{
+			// yaw * 2pi/ushort max
+			float fYaw = yaw * (float)Math.PI / 32767.5f;
+			float fPitch = pitch * (float)Math.PI / 65535.0f;
+			float sinYaw = native_sin(fYaw);
+			float cosYaw = native_cos(fYaw);
+			float sinPitch = native_sin(fPitch);
+			float cosPitch = native_cos(fPitch);
+
+			return new Vector3(cosYaw * cosPitch, sinYaw * cosPitch, sinPitch);
+		}
+
+
 		static byte chunkPosition(byte depth, Location location)
 		{
 			return (byte)((location.X >> (64 - depth - 1) & 1) +
@@ -111,7 +130,7 @@ namespace SvoTracer.Kernel
 
 		/// <summary>
 		/// Deduces array offset of a base's location given its depth
-		/// Bases are stored as a dense octree down to depth N
+		/// Bases are stored as a dense octree down to depth BaseDepth
 		/// </summary>
 		/// <param name="depth"></param>
 		/// <param name="location"></param>
@@ -176,12 +195,19 @@ namespace SvoTracer.Kernel
 		/// <param name="block"></param>
 		/// <param name="_data"></param>
 		/// <returns>Whether max opacity has been reached</returns>
-		static bool saveVoxelTrace(BlockData block, ref WorkingData _data)
+		static bool saveVoxelTrace(BlockData blockData, ref WorkingData _data)
 		{
-			_data.ColourR = native_divide(block.ColourR, 255.0f);
-			_data.ColourG = native_divide(block.ColourB, 255.0f);
-			_data.ColourB = native_divide(block.ColourG, 255.0f);
-			_data.Opacity = (byte)((int)_data.Opacity + block.Opacity);
+			Vector3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
+			// _data->ColourR = normal.x;
+			// _data->ColourB = normal.y;
+			// _data->ColourG = normal.z;
+			Vector3 reflection = _data.Direction - (2 * dot(_data.Direction, normal) * normal);
+			reflection += new Vector3(1, 1, 1);
+			reflection *= 255;
+			_data.ColourR = native_divide(blockData.ColourR + reflection.X, 510.0f);
+			_data.ColourB = native_divide(blockData.ColourB + reflection.Y, 510.0f);
+			_data.ColourG = native_divide(blockData.ColourG + reflection.Z, 510.0f);
+			_data.Opacity = (byte)((int)_data.Opacity + blockData.Opacity);
 			return _data.Opacity >= _data.MaxOpacity;
 		}
 
@@ -192,7 +218,7 @@ namespace SvoTracer.Kernel
 		/// <param name="_data"></param>
 		static void writeBackgroundData(string image, ref WorkingData _data)
 		{
-			saveVoxelTrace(background(ref _data), ref _data);
+			//saveVoxelTrace(background(ref _data), ref _data);
 			writeData(image, ref _data);
 		}
 
@@ -892,7 +918,7 @@ namespace SvoTracer.Kernel
 			data.DirectionSignY = data.Direction.Y >= 0;
 			data.DirectionSignZ = data.Direction.Z >= 0;
 			data.Origin = _input.Origin;
-			data.N = _input.N;
+			data.BaseDepth = _input.BaseDepth;
 			data.DoF = _input.DoF;
 			data.MaxOpacity = _input.MaxOpacity;
 			data.PixelFoV = _input.FoV[0] / _input.ScreenSize[0];
@@ -1035,8 +1061,8 @@ namespace SvoTracer.Kernel
 		{
 			Location location = new Location(addresses[address], addresses[address + 1],
 									   addresses[address + 2]);
-			address = baseLocation((byte)(inputData.N + 2), location);
-			for (byte i = (byte)(inputData.N + 2); i < depth; i++)
+			address = baseLocation((byte)(inputData.BaseDepth + 2), location);
+			for (byte i = (byte)(inputData.BaseDepth + 2); i < depth; i++)
 			{
 				if (usage[address >> 3].Tick < ushort.MaxValue - 1)
 				{
@@ -1268,7 +1294,6 @@ namespace SvoTracer.Kernel
 						 TraceInputData _input)
 		{
 			byte depth = 1;
-			byte previousChunkPosition;
 			uint localAddress;
 			uint x = get_global_id(0);
 			uint y = get_global_id(1);
@@ -1278,7 +1303,7 @@ namespace SvoTracer.Kernel
 			uint[] depthHeap = new uint[64];
 			WorkingData _data = setup(coord, ref _input);
 
-			depthHeap[_data.N + 1] = uint.MaxValue;
+			depthHeap[_data.BaseDepth + 1] = uint.MaxValue;
 			if (!startTrace(ref _data))
 			{
 				writeBackgroundData(outputImage, ref _data);
@@ -1290,7 +1315,7 @@ namespace SvoTracer.Kernel
 			{
 				// check if current base chunk contains geometry
 				localAddress = powSum((byte)(depth - 1)) + baseLocation(depth, _data.Location);
-				if (depth <= _data.N && (bases[localAddress] >> (chunkPosition(depth, _data.Location) * 2) & 2) != 2)
+				if (depth <= _data.BaseDepth && (bases[localAddress] >> (chunkPosition(depth, _data.Location) * 2) & 2) != 2)
 				{
 					// current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
 					previousLocation = _data.Location;
@@ -1304,19 +1329,19 @@ namespace SvoTracer.Kernel
 				}
 				else
 				{
-					if (depth < _data.N)
+					if (depth < _data.BaseDepth)
 						// still traversing base chunks
 						depth++;
 					else
 					{
 						// now traversing blocks
-						if (depth == _data.N)
-							depth = (byte)(_data.N + 2);
+						if (depth == _data.BaseDepth)
+							depth = (byte)(_data.BaseDepth + 2);
 
 						// Loop over a block and its children
-						while (depth > (_data.N + 1))
+						while (depth > (_data.BaseDepth + 1))
 						{
-							if (depth == _data.N + 2)
+							if (depth == _data.BaseDepth + 2)
 								localAddress = baseLocation(depth, _data.Location);
 							else
 								localAddress = blocks[depthHeap[depth - 1]].Child + chunkPosition((byte)(depth - 1), _data.Location);
@@ -1341,9 +1366,9 @@ namespace SvoTracer.Kernel
 							else
 							{
 								// C value is too diffuse to use
-								if (_data.ConeDepth < (_data.N + 2))
+								if (_data.ConeDepth < (_data.BaseDepth + 2))
 								{
-									depth = (byte)(_data.N + 2);
+									depth = (byte)(_data.BaseDepth + 2);
 									if (saveVoxelTrace(blocks[depthHeap[depth]].Data, ref _data))
 									{
 										writeData(outputImage, ref _data);
@@ -1383,7 +1408,7 @@ namespace SvoTracer.Kernel
 								}
 							}
 						}
-						depth = _data.N;
+						depth = _data.BaseDepth;
 					}
 				}
 			}

@@ -8,7 +8,7 @@ namespace SvoTracer.Domain.Models
 {
 	public struct Octree
 	{
-		public byte N;
+		public byte BaseDepth;
 		public uint BlockCount;
 		public ushort[] BaseBlocks;
 		public Block[] Blocks;

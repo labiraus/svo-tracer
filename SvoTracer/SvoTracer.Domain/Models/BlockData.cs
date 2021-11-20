@@ -6,8 +6,8 @@ namespace SvoTracer.Domain.Models
 {
 	public struct BlockData
 	{
-		public short NormalPitch;
-		public short NormalYaw;
+		public ushort NormalPitch;
+		public ushort NormalYaw;
 		public byte ColourR;
 		public byte ColourB;
 		public byte ColourG;
