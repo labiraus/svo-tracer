@@ -12,16 +12,19 @@ namespace SvoTracer.Window
 		{
 			byte BaseDepth = 4;
 			byte maxDepth = 9;
-			var treeName = "test" + maxDepth;
-			var builder = new CubeBuilder(
-				new Vector3(0.3f, 0.3f, 0.3f),
-				new Vector3(0.3f, 0.3f, 0.6f),
-				new Vector3(0.3f, 0.6f, 0.6f),
-				new Vector3(0.3f, 0.6f, 0.3f),
-				new Vector3(0.6f, 0.3f, 0.3f),
-				new Vector3(0.6f, 0.3f, 0.6f),
-				new Vector3(0.6f, 0.6f, 0.6f),
-				new Vector3(0.6f, 0.6f, 0.3f));
+			//var treeName = "test" + maxDepth;
+			//var builder = new CubeBuilder(
+			//	new Vector3(0.3f, 0.3f, 0.3f),
+			//	new Vector3(0.3f, 0.3f, 0.6f),
+			//	new Vector3(0.3f, 0.6f, 0.6f),
+			//	new Vector3(0.3f, 0.6f, 0.3f),
+			//	new Vector3(0.6f, 0.3f, 0.3f),
+			//	new Vector3(0.6f, 0.3f, 0.6f),
+			//	new Vector3(0.6f, 0.6f, 0.6f),
+			//	new Vector3(0.6f, 0.6f, 0.3f));
+			var treeName = "sphere" + maxDepth;
+			var builder = new SphereBuilder(
+				new Vector3(0.5f, 0.5f, 0.5f), 0.2f);
 			var treeManager = new TreeManager($"{Environment.CurrentDirectory}\\trees");
 
 			treeManager.DeleteTree(treeName);

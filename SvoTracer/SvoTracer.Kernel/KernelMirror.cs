@@ -107,7 +107,7 @@ namespace SvoTracer.Kernel
 			return output;
 		}
 
-		static Vector3 normalVector(ushort pitch, ushort yaw)
+		static Vector3 normalVector(short pitch, short yaw)
 		{
 			// yaw * 2pi/ushort max
 			float fYaw = yaw * (float)Math.PI / 32767.5f;

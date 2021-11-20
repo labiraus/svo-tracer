@@ -109,7 +109,7 @@ namespace SvoTracer.Domain
 			};
 		}
 
-		private (short pitch, short yaw) getNormal((float, float) x, (float, float) y, (float, float) z)
+		private (short pitch, short yaw) getNormal((float min, float max) x, (float min, float max) y, (float min, float max) z)
 		{
 			var intersect = intersections(x, y, z);
 			int i = 0;

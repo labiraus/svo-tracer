@@ -1,6 +1,6 @@
 typedef struct {
-  ushort NormalPitch;
-  ushort NormalYaw;
+  short NormalPitch;
+  short NormalYaw;
   uchar ColourR;
   uchar ColourB;
   uchar ColourG;
@@ -163,10 +163,10 @@ uint powSum(uchar depth) {
   return output;
 }
 
-float3 normalVector(ushort pitch, ushort yaw) {
-  // yaw * 2pi/ushort max
-  float fYaw = yaw * M_PI_F / 32767.5f;
-  float fPitch = pitch * M_PI_F / 65535.0f;
+float3 normalVector(short pitch, short yaw) {
+  // yaw * 2pi/short max
+  float fYaw = yaw * M_PI_F / 16383.75f;
+  float fPitch = pitch * M_PI_F / 32767.5f;
   float sinYaw = native_sin(fYaw);
   float cosYaw = native_cos(fYaw);
   float sinPitch = native_sin(fPitch);
