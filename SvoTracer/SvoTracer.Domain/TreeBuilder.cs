@@ -1,43 +1,97 @@
-﻿using SvoTracer.Domain.Models;
-using SvoTracer.Domain.Serializers;
+﻿using SvoTracer.Domain.Interfaces;
+using SvoTracer.Domain.Models;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Runtime.Serialization.Formatters.Binary;
-using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace SvoTracer.Domain
 {
-	public abstract class TreeBuilder : ITreeBuilder
+	public class TreeBuilder : ITreeBuilder
 	{
 		protected const ulong nearMax = ulong.MaxValue - (ulong.MaxValue >> 1);
+		protected readonly IList<IGeometryDefinition> geometryDefinitions = new List<IGeometryDefinition>();
 
-		/// <summary>
-		/// Determines whether the volume bounded within the x/y/z range contains geometry
-		/// </summary>
-		/// <param name="a">x min/maximum</param>
-		/// <param name="b">y min/maximum</param>
-		/// <param name="c">z min/maximum</param>
-		/// <returns></returns>
-		protected abstract bool ContainsGeo((float min, float max) a, (float min, float max) b, (float min, float max) c);
-		/// <summary>
-		/// Determines whether the volume bounded within the x/y/z range contains empty air
-		/// </summary>
-		/// <param name="a">x min/maximum</param>
-		/// <param name="b">y min/maximum</param>
-		/// <param name="c">z min/maximum</param>
-		/// <returns></returns>
-		protected abstract bool ContainsAir((float min, float max) a, (float min, float max) b, (float min, float max) c);
+		public TreeBuilder()
+		{
+
+		}
+
+		public TreeBuilder(IEnumerable<IGeometryDefinition> geometry)
+		{
+			this.geometryDefinitions = geometry.ToList();
+		}
+
+		public void AddGeometry(IGeometryDefinition geometryDefinition)
+		{
+			geometryDefinitions.Add(geometryDefinition);
+		}
+
+		protected virtual bool ContainsAir(BoundingVolume volume)
+		{
+			foreach (var definition in geometryDefinitions.Where(g => g.WithinBounds(volume)))
+				if (!definition.ContainsAir(volume))
+					return false;
+			return true;
+		}
+
+		protected virtual bool ContainsGeo(BoundingVolume volume)
+		{
+			foreach (var definition in geometryDefinitions.Where(g => g.WithinBounds(volume)))
+				if (definition.ContainsGeo(volume))
+					return true;
+			return false;
+		}
+
+		protected virtual (short pitch, short yaw) GetNormal(BoundingVolume volume)
+		{
+			short pitch = 0, yaw = 0;
+			foreach (var definition in geometryDefinitions.Where(g => g.WithinBounds(volume)))
+			{
+				if (definition.ContainsGeo(volume))
+					(pitch, yaw) = definition.Normal(volume);
+			}
+			return (pitch, yaw);
+		}
+
+		protected virtual byte[] GetColour(BoundingVolume volume)
+		{
+			var colour = new byte[3];
+			foreach (var definition in geometryDefinitions.Where(g => g.WithinBounds(volume)))
+			{
+				if (definition.ContainsGeo(volume))
+					colour = definition.Colour(volume);
+			}
+			return colour;
+		}
+
 		/// <summary>
 		/// Builds a Block for a set of binary coordinates
 		/// </summary>
 		/// <param name="coordinates"></param>
 		/// <param name="depth"></param>
 		/// <returns></returns>
-		protected abstract Block MakeBlock(Location coordinates, byte depth);
+		protected virtual Block MakeBlock(Location coordinates, byte depth)
+		{
+			var volume = new BoundingVolume(coordinates, depth);
+			var normal = GetNormal(volume);
+			var colour = GetColour(volume);
+
+			return new Block()
+			{
+				Chunk = MakeChunk(coordinates, depth),
+				Child = uint.MaxValue,
+				Data = new BlockData()
+				{
+					NormalPitch = normal.pitch,
+					NormalYaw = normal.yaw,
+					ColourR = colour[0],
+					ColourB = colour[1],
+					ColourG = colour[2],
+					Opacity = byte.MaxValue,
+					Properties = 0
+				}
+			};
+		}
 
 		/// <summary>
 		/// Builds an octree using inherited class's MakeBlock method
@@ -212,22 +266,22 @@ namespace SvoTracer.Domain
 		{
 			(var x, var y, var z) = coordinates.CoordinateRanges(depth);
 			return (ushort)(0
-			+ (ContainsAir((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 0 : 0)
-			+ (ContainsGeo((x.min, x.midpoint), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 1 : 0)
-			+ (ContainsAir((x.midpoint, x.max), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 2 : 0)
-			+ (ContainsGeo((x.midpoint, x.max), (y.min, y.midpoint), (z.min, z.midpoint)) ? 1 << 3 : 0)
-			+ (ContainsAir((x.min, x.midpoint), (y.midpoint, y.max), (z.min, z.midpoint)) ? 1 << 4 : 0)
-			+ (ContainsGeo((x.min, x.midpoint), (y.midpoint, y.max), (z.min, z.midpoint)) ? 1 << 5 : 0)
-			+ (ContainsAir((x.midpoint, x.max), (y.midpoint, y.max), (z.min, z.midpoint)) ? 1 << 6 : 0)
-			+ (ContainsGeo((x.midpoint, x.max), (y.midpoint, y.max), (z.min, z.midpoint)) ? 1 << 7 : 0)
-			+ (ContainsAir((x.min, x.midpoint), (y.min, y.midpoint), (z.midpoint, z.max)) ? 1 << 8 : 0)
-			+ (ContainsGeo((x.min, x.midpoint), (y.min, y.midpoint), (z.midpoint, z.max)) ? 1 << 9 : 0)
-			+ (ContainsAir((x.midpoint, x.max), (y.min, y.midpoint), (z.midpoint, z.max)) ? 1 << 10 : 0)
-			+ (ContainsGeo((x.midpoint, x.max), (y.min, y.midpoint), (z.midpoint, z.max)) ? 1 << 11 : 0)
-			+ (ContainsAir((x.min, x.midpoint), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 12 : 0)
-			+ (ContainsGeo((x.min, x.midpoint), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 13 : 0)
-			+ (ContainsAir((x.midpoint, x.max), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 14 : 0)
-			+ (ContainsGeo((x.midpoint, x.max), (y.midpoint, y.max), (z.midpoint, z.max)) ? 1 << 15 : 0));
+			+ (ContainsAir(new BoundingVolume(x.min, x.midpoint, y.min, y.midpoint, z.min, z.midpoint)) ? 1 << 0 : 0)
+			+ (ContainsGeo(new BoundingVolume(x.min, x.midpoint, y.min, y.midpoint, z.min, z.midpoint)) ? 1 << 1 : 0)
+			+ (ContainsAir(new BoundingVolume(x.midpoint, x.max, y.min, y.midpoint, z.min, z.midpoint)) ? 1 << 2 : 0)
+			+ (ContainsGeo(new BoundingVolume(x.midpoint, x.max, y.min, y.midpoint, z.min, z.midpoint)) ? 1 << 3 : 0)
+			+ (ContainsAir(new BoundingVolume(x.min, x.midpoint, y.midpoint, y.max, z.min, z.midpoint)) ? 1 << 4 : 0)
+			+ (ContainsGeo(new BoundingVolume(x.min, x.midpoint, y.midpoint, y.max, z.min, z.midpoint)) ? 1 << 5 : 0)
+			+ (ContainsAir(new BoundingVolume(x.midpoint, x.max, y.midpoint, y.max, z.min, z.midpoint)) ? 1 << 6 : 0)
+			+ (ContainsGeo(new BoundingVolume(x.midpoint, x.max, y.midpoint, y.max, z.min, z.midpoint)) ? 1 << 7 : 0)
+			+ (ContainsAir(new BoundingVolume(x.min, x.midpoint, y.min, y.midpoint, z.midpoint, z.max)) ? 1 << 8 : 0)
+			+ (ContainsGeo(new BoundingVolume(x.min, x.midpoint, y.min, y.midpoint, z.midpoint, z.max)) ? 1 << 9 : 0)
+			+ (ContainsAir(new BoundingVolume(x.midpoint, x.max, y.min, y.midpoint, z.midpoint, z.max)) ? 1 << 10 : 0)
+			+ (ContainsGeo(new BoundingVolume(x.midpoint, x.max, y.min, y.midpoint, z.midpoint, z.max)) ? 1 << 11 : 0)
+			+ (ContainsAir(new BoundingVolume(x.min, x.midpoint, y.midpoint, y.max, z.midpoint, z.max)) ? 1 << 12 : 0)
+			+ (ContainsGeo(new BoundingVolume(x.min, x.midpoint, y.midpoint, y.max, z.midpoint, z.max)) ? 1 << 13 : 0)
+			+ (ContainsAir(new BoundingVolume(x.midpoint, x.max, y.midpoint, y.max, z.midpoint, z.max)) ? 1 << 14 : 0)
+			+ (ContainsGeo(new BoundingVolume(x.midpoint, x.max, y.midpoint, y.max, z.midpoint, z.max)) ? 1 << 15 : 0));
 		}
 
 		/// <summary>

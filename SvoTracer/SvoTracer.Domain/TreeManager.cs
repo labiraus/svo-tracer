@@ -1,4 +1,5 @@
-﻿using SvoTracer.Domain.Models;
+﻿using SvoTracer.Domain.Interfaces;
+using SvoTracer.Domain.Models;
 using SvoTracer.Domain.Serializers;
 using System;
 using System.IO;
@@ -27,8 +28,8 @@ namespace SvoTracer.Domain
 
 		public Octree LoadTree(string fileName)
 		{
-			using FileStream fs = new FileStream($"{_path}\\{fileName}.oct", FileMode.Open);
-			using BinaryReader br = new BinaryReader(fs);
+			using FileStream fs = new($"{_path}\\{fileName}.oct", FileMode.Open);
+			using BinaryReader br = new(fs);
 			var tree = OctreeSerializer.Deserialize(br);
 
 			br.Close();
@@ -43,7 +44,7 @@ namespace SvoTracer.Domain
 				if (!Directory.Exists(_path))
 					Directory.CreateDirectory(_path);
 				using FileStream fs = File.Create($"{_path}\\{fileName}.oct", 2048, FileOptions.None);
-				using BinaryWriter bw = new BinaryWriter(fs);
+				using BinaryWriter bw = new(fs);
 				tree.Serialize(bw);
 
 				bw.Close();
@@ -55,6 +56,5 @@ namespace SvoTracer.Domain
 				Console.ReadKey(true);
 			}
 		}
-
 	}
 }
