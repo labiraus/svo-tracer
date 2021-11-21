@@ -10,47 +10,47 @@ namespace SvoTracer.Domain.Models
 	{
 		public BoundingVolume(float xMin, float xMax, float yMin, float yMax, float zMin, float zMax)
 		{
-			XMin = xMin;
-			XMax = xMax;
-			YMin = yMin;
-			YMax = yMax;
-			ZMin = zMin;
-			ZMax = zMax;
+			MinX = xMin;
+			MaxX = xMax;
+			MinY = yMin;
+			MaxY = yMax;
+			MinZ = zMin;
+			MaxZ = zMax;
 		}
 		public BoundingVolume(Location location, byte depth)
 		{
 			float division = 1;
-			XMax = 1;
-			XMin = 0;
-			YMax = 1;
-			YMin = 0;
-			ZMax = 1;
-			ZMin = 0;
+			MaxX = 1;
+			MinX = 0;
+			MaxY = 1;
+			MinY = 0;
+			MaxZ = 1;
+			MinZ = 0;
 			const ulong nearMax = ulong.MaxValue - (ulong.MaxValue >> 1);
 			for (ushort i = 0; i < depth; i++)
 			{
 				division /= 2;
 				if ((location.X & (nearMax >> i)) > 0)
-					XMax += division;
+					MaxX += division;
 				else
-					XMin -= division;
+					MinX -= division;
 
 				if ((location.Y & (nearMax >> i)) > 0)
-					YMax += division;
+					MaxY += division;
 				else
-					YMin -= division;
+					MinY -= division;
 
 				if ((location.Z & (nearMax >> i)) > 0)
-					ZMax += division;
+					MaxZ += division;
 				else
-					ZMin -= division;
+					MinZ -= division;
 			}
 		}
-		public float XMin { get; set; }
-		public float XMax { get; set; }
-		public float YMin { get; set; }
-		public float YMax { get; set; }
-		public float ZMin { get; set; }
-		public float ZMax { get; set; }
+		public float MinX { get; set; }
+		public float MaxX { get; set; }
+		public float MinY { get; set; }
+		public float MaxY { get; set; }
+		public float MinZ { get; set; }
+		public float MaxZ { get; set; }
 	}
 }

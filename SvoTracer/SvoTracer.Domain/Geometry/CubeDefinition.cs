@@ -2,135 +2,79 @@
 using System;
 using System.Drawing;
 using System.Linq;
-using System.Numerics;
 using SvoTracer.Domain.Models;
+using OpenTK.Mathematics;
 
 namespace SvoTracer.Domain.Geometry
 {
 	public class CubeDefinition : IGeometryDefinition
 	{
-		(float min, float max) x0, y0, z0;
-		(float min, float max) x1, y1, z1;
-		(float min, float max) x2, y2, z2;
-		(float min, float max) x3, y3, z3;
-		(float min, float max) x4, y4, z4;
-		(float min, float max) x5, y5, z5;
-		(float min, float max) x6, y6, z6;
+		private readonly Box3 box;
 
-		Plane plane1;
-		Plane plane2;
-		Plane plane3;
-		Plane plane4;
-		Plane plane5;
-		Plane plane6;
-
-		public CubeDefinition(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 e, Vector3 f, Vector3 g, Vector3 h)
+		public CubeDefinition(Vector3 min, Vector3 max)
 		{
-			x0 = (new[] { a.X, b.X, c.X, d.X, e.X, f.X, g.X, h.X }.Min(), new[] { a.X, b.X, c.X, d.X, e.X, f.X, g.X, h.X }.Max());
-			y0 = (new[] { a.Y, b.Y, c.Y, d.Y, e.Y, f.Y, g.Y, h.Y }.Min(), new[] { a.Y, b.Y, c.Y, d.Y, e.Y, f.Y, g.Y, h.Y }.Max());
-			z0 = (new[] { a.Z, b.Z, c.Z, d.Z, e.Z, f.Z, g.Z, h.Z }.Min(), new[] { a.Z, b.Z, c.Z, d.Z, e.Z, f.Z, g.Z, h.Z }.Max());
-			x1 = (new[] { a.X, b.X, c.X, d.X }.Min(), new[] { a.X, b.X, c.X, d.X }.Max());
-			y1 = (new[] { a.Y, b.Y, c.Y, d.Y }.Min(), new[] { a.Y, b.Y, c.Y, d.Y }.Max());
-			z1 = (new[] { a.Z, b.Z, c.Z, d.Z }.Min(), new[] { a.Z, b.Z, c.Z, d.Z }.Max());
-			x2 = (new[] { a.X, b.X, e.X, f.X }.Min(), new[] { a.X, b.X, e.X, f.X }.Max());
-			y2 = (new[] { a.Y, b.Y, e.Y, f.Y }.Min(), new[] { a.Y, b.Y, e.Y, f.Y }.Max());
-			z2 = (new[] { a.Z, b.Z, e.Z, f.Z }.Min(), new[] { a.Z, b.Z, e.Z, f.Z }.Max());
-			x3 = (new[] { b.X, c.X, f.X, g.X }.Min(), new[] { b.X, c.X, f.X, g.X }.Max());
-			y3 = (new[] { b.Y, c.Y, f.Y, g.Y }.Min(), new[] { b.Y, c.Y, f.Y, g.Y }.Max());
-			z3 = (new[] { b.Z, c.Z, f.Z, g.Z }.Min(), new[] { b.Z, c.Z, f.Z, g.Z }.Max());
-			x4 = (new[] { c.X, d.X, g.X, h.X }.Min(), new[] { c.X, d.X, g.X, h.X }.Max());
-			y4 = (new[] { c.Y, d.Y, g.Y, h.Y }.Min(), new[] { c.Y, d.Y, g.Y, h.Y }.Max());
-			z4 = (new[] { c.Z, d.Z, g.Z, h.Z }.Min(), new[] { c.Z, d.Z, g.Z, h.Z }.Max());
-			x5 = (new[] { a.X, d.X, e.X, h.X }.Min(), new[] { a.X, d.X, e.X, h.X }.Max());
-			y5 = (new[] { a.Y, d.Y, e.Y, h.Y }.Min(), new[] { a.Y, d.Y, e.Y, h.Y }.Max());
-			z5 = (new[] { a.Z, d.Z, e.Z, h.Z }.Min(), new[] { a.Z, d.Z, e.Z, h.Z }.Max());
-			x6 = (new[] { e.X, f.X, g.X, h.X }.Min(), new[] { e.X, f.X, g.X, h.X }.Max());
-			y6 = (new[] { e.Y, f.Y, g.Y, h.Y }.Min(), new[] { e.Y, f.Y, g.Y, h.Y }.Max());
-			z6 = (new[] { e.Z, f.Z, g.Z, h.Z }.Min(), new[] { e.Z, f.Z, g.Z, h.Z }.Max());
-
-			plane1.Normal = Plane.CreateFromVertices(a, b, c).Normal;
-			plane2.Normal = Plane.CreateFromVertices(a, b, e).Normal;
-			plane3.Normal = Plane.CreateFromVertices(b, c, f).Normal;
-			plane4.Normal = Plane.CreateFromVertices(c, d, g).Normal;
-			plane5.Normal = Plane.CreateFromVertices(a, d, e).Normal;
-			plane6.Normal = Plane.CreateFromVertices(e, f, g).Normal;
+			box = new(min, max);
 		}
 
 		private Face intersections(BoundingVolume volume)
 		{
 			Face intersections = Face.None;
-			intersections |= (volume.XMin < x1.max && volume.XMax > x1.min &&
-				volume.YMin < y1.max && volume.YMax > y1.min &&
-				volume.ZMin < z1.max && volume.ZMax > z1.min) ? Face.Front : 0;
+			if (ContainsGeo(volume))
+			{
+				intersections |= (volume.MinX < box.Min.X && volume.MaxX > box.Min.X) ? Face.Front : 0;
 
-			intersections |= (volume.XMin < x2.max && volume.XMax > x2.min &&
-				volume.YMin < y2.max && volume.YMax > y2.min &&
-				volume.ZMin < z2.max && volume.ZMax > z2.min) ? Face.Bottom : 0;
+				intersections |= (volume.MinX < box.Max.X && volume.MaxX > box.Max.X) ? Face.Back : 0;
 
-			intersections |= (volume.XMin < x3.max && volume.XMax > x3.min &&
-				volume.YMin < y3.max && volume.YMax > y3.min &&
-				volume.ZMin < z3.max && volume.ZMax > z3.min) ? Face.Left : 0;
+				intersections |= (volume.MinY < box.Max.Y && volume.MaxY > box.Max.Y) ? Face.Top : 0;
 
-			intersections |= (volume.XMin < x4.max && volume.XMax > x4.min &&
-				volume.YMin < y4.max && volume.YMax > y4.min &&
-				volume.ZMin < z4.max && volume.ZMax > z4.min) ? Face.Back : 0;
+				intersections |= (volume.MinY < box.Min.Y && volume.MaxY > box.Min.Y) ? Face.Bottom : 0;
 
-			intersections |= (volume.XMin < x5.max && volume.XMax > x5.min &&
-				volume.YMin < y5.max && volume.YMax > y5.min &&
-				volume.ZMin < z5.max && volume.ZMax > z5.min) ? Face.Top : 0;
+				intersections |= (volume.MinZ < box.Min.Z && volume.MaxZ > box.Min.Z) ? Face.Left : 0;
 
-			intersections |= (volume.XMin < x6.max && volume.XMax > x6.min &&
-				volume.YMin < y6.max && volume.YMax > y6.min &&
-				volume.ZMin < z6.max && volume.ZMax > z6.min) ? Face.Right : 0;
+				intersections |= (volume.MinZ < box.Max.Z && volume.MaxZ > box.Max.Z) ? Face.Right : 0;
+			}
 			return intersections;
 		}
 
 		private byte[] faceColour(Face intersect)
 		{
-			var colour = new Vector3(0f, 0f, 0f);
-			float i = 0;
+			float r = 0, g = 0, b = 0;
 			foreach (Enum value in Enum.GetValues(intersect.GetType()))
 				if (intersect.HasFlag(value))
-				{
-					i++;
 					switch (value)
 					{
 						case Face.Front:
-							colour = new Vector3(colour.X + 1f, colour.Y + 0f, colour.Z + 0f);
+							r++;
 							break;
 						case Face.Bottom:
-							colour = new Vector3(colour.X + 0f, colour.Y + 1f, colour.Z + 0f);
+							//g++;
 							break;
 						case Face.Left:
-							colour = new Vector3(colour.X + 0f, colour.Y + 0f, colour.Z + 1f);
+							//b++;
 							break;
 						case Face.Back:
-							colour = new Vector3(colour.X + 1f, colour.Y + 1f, colour.Z + 0f);
+							//r++;
+							//g++;
 							break;
 						case Face.Top:
-							colour = new Vector3(colour.X + 0f, colour.Y + 1f, colour.Z + 1f);
+							//g++;
+							//b++;
 							break;
 						case Face.Right:
-							colour = new Vector3(colour.X + 1f, colour.Y + 0f, colour.Z + 1f);
+							//r++;
+							//b++;
 							break;
 					}
-				}
 
-			if (i == 0)
-				colour = new Vector3(1f, 1f, 1f);
-
-			return new byte[] { (byte)(byte.MaxValue / colour.X), (byte)(byte.MaxValue / colour.Y), (byte)(byte.MaxValue / colour.Z) };
+			float m = Math.Max(Math.Max(r, g), b);
+			return m == 0 ?
+				new byte[] { 255, 255, 255 } :
+				new byte[] { (byte)(byte.MaxValue / (r / m)), (byte)(byte.MaxValue / (g / m)), (byte)(byte.MaxValue / (b / m)) };
 		}
 
-		public bool WithinBounds(BoundingVolume volume) =>
-				(volume.XMin < x0.max && volume.XMax > x0.min &&
-				 volume.YMin < y0.max && volume.YMax > y0.min &&
-				 volume.ZMin < z0.max && volume.ZMax > z0.min);
+		public bool WithinBounds(BoundingVolume volume) => box.Contains(new Box3(volume.MinX, volume.MinY, volume.MinZ, volume.MaxX, volume.MaxY, volume.MaxZ));
 
-		public bool ContainsGeo(BoundingVolume volume) =>
-				(volume.XMin < x0.max && volume.XMax > x0.min &&
-				 volume.YMin < y0.max && volume.YMax > y0.min &&
-				 volume.ZMin < z0.max && volume.ZMax > z0.min);
+		public bool ContainsGeo(BoundingVolume volume) => box.Contains(new Box3(volume.MinX, volume.MinY, volume.MinZ, volume.MaxX, volume.MaxY, volume.MaxZ));
 
 		public bool ContainsAir(BoundingVolume volume) =>
 			  !ContainsGeo(volume) || intersections(volume) > 0;
@@ -148,22 +92,22 @@ namespace SvoTracer.Domain.Geometry
 					switch (value)
 					{
 						case Face.Front:
-							normal = plane1.Normal;
+							normal = new Vector3(-1, 0, 0);
 							break;
 						case Face.Bottom:
-							normal = plane2.Normal;
+							normal = new Vector3(0, -1, 0);
 							break;
 						case Face.Left:
-							normal = plane3.Normal;
+							normal = new Vector3(0, 0, -1);
 							break;
 						case Face.Back:
-							normal = plane4.Normal;
+							normal = new Vector3(1, 0, 0);
 							break;
 						case Face.Top:
-							normal = plane5.Normal;
+							normal = new Vector3(0, 1, 0);
 							break;
 						case Face.Right:
-							normal = plane6.Normal;
+							normal = new Vector3(0, 0, 1);
 							break;
 						default:
 							continue;
@@ -175,7 +119,7 @@ namespace SvoTracer.Domain.Geometry
 			if (i == 0)
 				return (0, 0);
 
-			finalNormal /= finalNormal.Length();
+			finalNormal = finalNormal.Normalized();
 			return ((short)(short.MaxValue * Math.Asin(finalNormal.Z)), (short)(short.MaxValue * Math.Atan2(finalNormal.X, -finalNormal.Y)));
 		}
 
@@ -183,10 +127,11 @@ namespace SvoTracer.Domain.Geometry
 		{
 			var intersect = intersections(volume);
 			var edge = ((int)intersect >> 5 & 1) + ((int)intersect >> 4 & 1) + ((int)intersect >> 3 & 1) + ((int)intersect >> 2 & 1) + ((int)intersect >> 1 & 1) + ((int)intersect & 1);
-			if (volume.XMax - volume.XMin < 0.0005 && edge > 1)
+			if (volume.MaxX - volume.MinX < 0.0005 && edge > 1)
 			{
-				int colour = Color.Black.ToArgb();
-				return new byte[] { (byte)(colour >> 24), (byte)(colour >> 16), (byte)(colour >> 8) };
+				return new byte[] { 0, 0, 0 };
+				//int colour = Color.Black.ToArgb();
+				//return new byte[] { (byte)(colour >> 24), (byte)(colour >> 16), (byte)(colour >> 8) };
 			}
 
 			return faceColour(intersect);

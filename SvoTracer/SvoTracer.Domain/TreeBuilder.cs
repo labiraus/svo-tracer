@@ -59,7 +59,7 @@ namespace SvoTracer.Domain
 			foreach (var definition in geometryDefinitions.Where(g => g.WithinBounds(volume)))
 			{
 				if (definition.ContainsGeo(volume))
-					colour = definition.Colour(volume);
+					return definition.Colour(volume);
 			}
 			return colour;
 		}
