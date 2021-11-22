@@ -165,8 +165,8 @@ uint powSum(uchar depth) {
 
 float3 normalVector(short pitch, short yaw) {
   // yaw * 2pi/short max
-  float fYaw = yaw * M_PI_F / 16383.75f;
-  float fPitch = pitch * M_PI_F / 32767.5f;
+  float fYaw = yaw * M_PI_F / 32767.0f;
+  float fPitch = pitch * M_PI_F / 32767.0f;
   float sinYaw = native_sin(fYaw);
   float cosYaw = native_cos(fYaw);
   float sinPitch = native_sin(fPitch);
@@ -228,20 +228,21 @@ bool saveVoxelTrace(BlockData blockData, WorkingData *_data) {
 
     float3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
     float3 reflection = _data->Direction - (2 * dot(_data->Direction, normal) * normal);
-    //float shade = (dot(reflection, (float3)(1, 0, 0)) + 1) / 2.0f;
-    float shade = (dot(normal, (float3)(1, 0, 0)) + 1) / 2.0f;
-    //float shade = (dot(reflection, normal) + 1) / 2.0f;
+    // float shade = dot(reflection, (float3)(1, 0, 0)) * 128.0f;
+    float shade = dot(normal, (float3)(1, 0, 0)) * 128.0f;
     // _data->ColourR = normal.x;
     // _data->ColourB = normal.x;
     // _data->ColourG = normal.x;
     // reflection += (float3)(1, 1, 1);
-    // reflection *= 255;
-    // _data->ColourR = native_divide(blockData.ColourR + reflection.x, 510.0f);
-    // _data->ColourB = native_divide(blockData.ColourB + reflection.y, 510.0f);
-    // _data->ColourG = native_divide(blockData.ColourG + reflection.z, 510.0f);
-    _data->ColourR = native_divide(blockData.ColourR, 255.0f);
-    _data->ColourB = native_divide(blockData.ColourB, 255.0f);
-    _data->ColourG = native_divide(blockData.ColourG, 255.0f);
+    if (shade > 0) {
+      _data->ColourR = native_divide(blockData.ColourR + shade, 510.0f);
+      _data->ColourB = native_divide(blockData.ColourB + shade, 510.0f);
+      _data->ColourG = native_divide(blockData.ColourG + shade, 510.0f);
+    } else {
+      _data->ColourR = native_divide(blockData.ColourR, 510.0f);
+      _data->ColourB = native_divide(blockData.ColourB, 510.0f);
+      _data->ColourG = native_divide(blockData.ColourG, 510.0f);
+    }
     _data->Opacity = _data->Opacity + blockData.Opacity;
   }
   return true;
@@ -249,7 +250,7 @@ bool saveVoxelTrace(BlockData blockData, WorkingData *_data) {
 
 // Combine _data colour+opacity with background colour and write to output
 void writeBackgroundData(__write_only image2d_t outputImage, WorkingData *_data) {
-  saveVoxelTrace(background(_data), _data);
+  // saveVoxelTrace(background(_data), _data);
   writeData(outputImage, _data);
 }
 

@@ -1,4 +1,5 @@
-﻿using SvoTracer.Domain.Interfaces;
+﻿using OpenTK.Mathematics;
+using SvoTracer.Domain.Interfaces;
 using SvoTracer.Domain.Models;
 using System;
 using System.Collections.Generic;
@@ -48,7 +49,7 @@ namespace SvoTracer.Domain
 			foreach (var definition in geometryDefinitions.Where(g => g.WithinBounds(volume)))
 			{
 				if (definition.ContainsGeo(volume))
-					(pitch, yaw) = definition.Normal(volume);
+					(pitch, yaw) = NormalAngle(definition.Normal(volume));
 			}
 			return (pitch, yaw);
 		}
@@ -324,6 +325,14 @@ namespace SvoTracer.Domain
 				output += (z >> i & 1) << ((i * 3) + 2);
 			}
 			return output;
+		}
+
+		public static (short pitch, short yaw) NormalAngle(Vector3 normal)
+		{
+			var finalNormal = normal.Normalized();
+			var pitch = Math.Asin(-finalNormal.Y) / Math.PI;
+			var yaw = Math.Atan2(finalNormal.X, finalNormal.Z) / Math.PI;
+			return ((short)(short.MaxValue * pitch), (short)(short.MaxValue * yaw));
 		}
 
 		public static uint PowSum(byte depth)

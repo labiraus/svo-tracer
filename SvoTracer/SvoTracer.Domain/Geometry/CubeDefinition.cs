@@ -79,7 +79,7 @@ namespace SvoTracer.Domain.Geometry
 		public bool ContainsAir(BoundingVolume volume) =>
 			  !ContainsGeo(volume) || intersections(volume) > 0;
 
-		public (short pitch, short yaw) Normal(BoundingVolume volume)
+		public Vector3 Normal(BoundingVolume volume)
 		{
 			var intersect = intersections(volume);
 			int i = 0;
@@ -116,11 +116,11 @@ namespace SvoTracer.Domain.Geometry
 					if (finalNormal + normal != Vector3.Zero)
 						finalNormal += normal;
 				}
-			if (i == 0)
-				return (0, 0);
 
-			finalNormal = finalNormal.Normalized();
-			return ((short)(short.MaxValue * Math.Asin(finalNormal.Z)), (short)(short.MaxValue * Math.Atan2(finalNormal.X, -finalNormal.Y)));
+			if (i == 0)
+				return Vector3.UnitX;
+
+			return finalNormal;
 		}
 
 		public byte[] Colour(BoundingVolume volume)

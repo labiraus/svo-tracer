@@ -53,15 +53,17 @@ namespace SvoTracer.Domain.Geometry
 			 volume.MinY < max.Y && volume.MaxY > min.Y &&
 			 volume.MinZ < max.Z && volume.MaxZ > min.Z);
 
-		public (short pitch, short yaw) Normal(BoundingVolume volume)
+		public Vector3 Normal(BoundingVolume volume)
 		{
-			var finalNormal = new Vector3(volume.MaxX - volume.MinX - origin.X, volume.MaxY - volume.MinY - origin.Y, volume.MaxZ - volume.MinZ - origin.Z).Normalized();
-			return ((short)(short.MaxValue * Math.Asin(finalNormal.Z)), (short)(short.MaxValue * Math.Atan2(finalNormal.X, -finalNormal.Y)));
+			float x = ((volume.MaxX - volume.MinX) / 2) + volume.MinX;
+			float y = ((volume.MaxY - volume.MinY) / 2) + volume.MinY;
+			float z = ((volume.MaxZ - volume.MinZ) / 2) + volume.MinZ;
+			return new Vector3(x - origin.X, y - origin.Y, z - origin.Z);
 		}
 
 		public byte[] Colour(BoundingVolume volume)
 		{
-			return new byte[3] { 1, 1, 1 };
+			return new byte[3] { 255, 0, 0 };
 		}
 	}
 }
