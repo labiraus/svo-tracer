@@ -47,29 +47,29 @@ namespace SvoTracer.Domain.Geometry
 							r++;
 							break;
 						case Face.Bottom:
-							//g++;
+							g++;
 							break;
 						case Face.Left:
-							//b++;
+							b++;
 							break;
 						case Face.Back:
-							//r++;
-							//g++;
+							r++;
+							g++;
 							break;
 						case Face.Top:
-							//g++;
-							//b++;
+							g++;
+							b++;
 							break;
 						case Face.Right:
-							//r++;
-							//b++;
+							r++;
+							b++;
 							break;
 					}
 
 			float m = Math.Max(Math.Max(r, g), b);
 			return m == 0 ?
 				new byte[] { 255, 255, 255 } :
-				new byte[] { (byte)(byte.MaxValue / (r / m)), (byte)(byte.MaxValue / (g / m)), (byte)(byte.MaxValue / (b / m)) };
+				new byte[] { (byte)(byte.MaxValue * (r / m)), (byte)(byte.MaxValue * (g / m)), (byte)(byte.MaxValue * (b / m)) };
 		}
 
 		public bool WithinBounds(BoundingVolume volume) => box.Contains(new Box3(volume.MinX, volume.MinY, volume.MinZ, volume.MaxX, volume.MaxY, volume.MaxZ));
@@ -129,9 +129,8 @@ namespace SvoTracer.Domain.Geometry
 			var edge = ((int)intersect >> 5 & 1) + ((int)intersect >> 4 & 1) + ((int)intersect >> 3 & 1) + ((int)intersect >> 2 & 1) + ((int)intersect >> 1 & 1) + ((int)intersect & 1);
 			if (volume.MaxX - volume.MinX < 0.0005 && edge > 1)
 			{
-				return new byte[] { 0, 0, 0 };
-				//int colour = Color.Black.ToArgb();
-				//return new byte[] { (byte)(colour >> 24), (byte)(colour >> 16), (byte)(colour >> 8) };
+				int colour = Color.Black.ToArgb();
+				return new byte[] { (byte)(colour >> 24), (byte)(colour >> 16), (byte)(colour >> 8) };
 			}
 
 			return faceColour(intersect);

@@ -31,19 +31,19 @@ namespace SvoTracer.Domain.Models
 			{
 				division /= 2;
 				if ((location.X & (nearMax >> i)) > 0)
-					MaxX += division;
+					MinX += division;
 				else
-					MinX -= division;
+					MaxX -= division;
 
 				if ((location.Y & (nearMax >> i)) > 0)
-					MaxY += division;
+					MinY += division;
 				else
-					MinY -= division;
+					MaxY -= division;
 
 				if ((location.Z & (nearMax >> i)) > 0)
-					MaxZ += division;
+					MinZ += division;
 				else
-					MinZ -= division;
+					MaxZ -= division;
 			}
 		}
 		public float MinX { get; set; }

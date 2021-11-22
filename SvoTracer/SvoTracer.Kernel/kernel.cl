@@ -249,7 +249,7 @@ bool saveVoxelTrace(BlockData blockData, WorkingData *_data) {
 
 // Combine _data colour+opacity with background colour and write to output
 void writeBackgroundData(__write_only image2d_t outputImage, WorkingData *_data) {
-  // saveVoxelTrace(background(_data), _data);
+  saveVoxelTrace(background(_data), _data);
   writeData(outputImage, _data);
 }
 
