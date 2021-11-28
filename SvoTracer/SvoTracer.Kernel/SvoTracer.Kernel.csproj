@@ -3,16 +3,19 @@
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <Platforms>AnyCPU;x86</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <None Remove="kernel.cl" />
+    <None Remove="test.cl" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="kernel.cl">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
+    <EmbeddedResource Include="test.cl" />
   </ItemGroup>
 
   <ItemGroup>

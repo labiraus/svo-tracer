@@ -15,6 +15,7 @@ namespace SvoTracer.Kernel
 		TraceMesh,
 		TraceParticle,
 		TraceLight,
-		ResolveImage
+		ResolveImage,
+		Test
 	}
 }

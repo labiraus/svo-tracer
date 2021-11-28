@@ -1,3 +1,5 @@
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+
 typedef struct {
   short NormalPitch;
   short NormalYaw;
@@ -220,38 +222,6 @@ BlockData background(WorkingData *_data) {
 
 void writeData(__write_only image2d_t outputImage, WorkingData *_data) {
   write_imagef(outputImage, _data->Coord, (float4)(_data->ColourR, _data->ColourG, _data->ColourB, 1));
-}
-
-// Combine _data colour+opacity with background colour
-bool saveVoxelTrace(BlockData blockData, WorkingData *_data) {
-  if (_data->Opacity < _data->MaxOpacity) {
-
-    float3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
-    float3 reflection = _data->Direction - (2 * dot(_data->Direction, normal) * normal);
-    // float shade = dot(reflection, (float3)(1, 0, 0)) * 128.0f;
-    float shade = dot(normal, (float3)(1, 0, 0)) * 128.0f;
-    // _data->ColourR = normal.x;
-    // _data->ColourB = normal.x;
-    // _data->ColourG = normal.x;
-    // reflection += (float3)(1, 1, 1);
-    if (shade > 0) {
-      _data->ColourR = native_divide(blockData.ColourR + shade, 510.0f);
-      _data->ColourB = native_divide(blockData.ColourB + shade, 510.0f);
-      _data->ColourG = native_divide(blockData.ColourG + shade, 510.0f);
-    } else {
-      _data->ColourR = native_divide(blockData.ColourR, 510.0f);
-      _data->ColourB = native_divide(blockData.ColourB, 510.0f);
-      _data->ColourG = native_divide(blockData.ColourG, 510.0f);
-    }
-    _data->Opacity = _data->Opacity + blockData.Opacity;
-  }
-  return true;
-}
-
-// Combine _data colour+opacity with background colour and write to output
-void writeBackgroundData(__write_only image2d_t outputImage, WorkingData *_data) {
-  // saveVoxelTrace(background(_data), _data);
-  writeData(outputImage, _data);
 }
 
 BlockData average(uint address, global Block *blocks, WorkingData *_data) {
@@ -1021,6 +991,42 @@ uint findAddress(global Block *blocks, global Usage *usage, global uint *childRe
   return address;
 }
 
+// void my_func_A(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests) {}
+
+// Combine _data colour+opacity with background colour
+bool saveVoxelTrace(BlockData blockData, global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId,
+                    global ChildRequest *childRequests, WorkingData *_data) {
+  if (_data->Opacity < _data->MaxOpacity) {
+
+    float3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
+    float3 reflection = _data->Direction - (2 * dot(_data->Direction, normal) * normal);
+    // float shade = dot(reflection, (float3)(1, 0, 0)) * 128.0f;
+    float shade = dot(normal, (float3)(1, 0, 0)) * 128.0f;
+    // _data->ColourR = normal.x;
+    // _data->ColourB = normal.x;
+    // _data->ColourG = normal.x;
+    // reflection += (float3)(1, 1, 1);
+    if (shade > 0) {
+      _data->ColourR = native_divide(blockData.ColourR + shade, 510.0f);
+      _data->ColourB = native_divide(blockData.ColourB + shade, 510.0f);
+      _data->ColourG = native_divide(blockData.ColourG + shade, 510.0f);
+    } else {
+      _data->ColourR = native_divide(blockData.ColourR, 510.0f);
+      _data->ColourB = native_divide(blockData.ColourB, 510.0f);
+      _data->ColourG = native_divide(blockData.ColourG, 510.0f);
+    }
+
+    _data->Opacity = _data->Opacity + blockData.Opacity;
+  }
+  return true;
+}
+
+// Combine _data colour+opacity with background colour and write to output
+void writeBackgroundData(__write_only image2d_t outputImage, WorkingData *_data) {
+  // saveVoxelTrace(background(_data), _data);
+  writeData(outputImage, _data);
+}
+
 //*******************************KERNELS***********************************
 
 kernel void prune(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests,
@@ -1228,7 +1234,7 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
             // C value is too diffuse to use
             if (_data->ConeDepth < (_data->BaseDepth + 2)) {
               depth = _data->BaseDepth + 2;
-              if (saveVoxelTrace(blocks[depthHeap[depth]].Data, _data)) {
+              if (saveVoxelTrace(blocks[depthHeap[depth]].Data, bases, blocks, usage, childRequestId, childRequests, _data)) {
                 writeData(outputImage, _data);
                 return;
               }
@@ -1242,7 +1248,7 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
             // no child found, resolve colour of this voxel
             else if (blocks[localAddress].Child == UINT_MAX) {
               requestChild(localAddress, depth, childRequestId, childRequests, _data->MaxChildRequestId, _data->Tick, 1, _data->Location);
-              if (saveVoxelTrace(blocks[localAddress].Data, _data)) {
+              if (saveVoxelTrace(blocks[localAddress].Data, bases, blocks, usage, childRequestId, childRequests, _data)) {
                 writeData(outputImage, _data);
                 return;
               }
@@ -1254,7 +1260,7 @@ kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage 
             }
 
             else {
-              if (saveVoxelTrace(average(localAddress, blocks, _data), _data)) {
+              if (saveVoxelTrace(average(localAddress, blocks, _data), bases, blocks, usage, childRequestId, childRequests, _data)) {
                 writeData(outputImage, _data);
                 return;
               }

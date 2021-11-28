@@ -38,7 +38,7 @@ namespace SvoTracer.Kernel
 			foreach (var deviceId in devices)
 			{
 				resultCode = CL.GetDeviceInfo(deviceId, DeviceInfo.Extensions, out byte[] bytes);
-				ComputeManager.HandleResultCode(resultCode, "GetDeviceInfo");
+				ComputeManager.HandleResultCode(resultCode, "GetDeviceInfo:Extensions");
 				var extensions = Encoding.ASCII.GetString(bytes).Split(" ");
 				if (extensions.Any(x => x == "cl_khr_gl_sharing"))
 				{
@@ -50,6 +50,13 @@ namespace SvoTracer.Kernel
 			{
 				throw new Exception("Device supporting cl_khr_gl_sharing not found");
 			}
+
+			resultCode = CL.GetDeviceInfo(device, DeviceInfo.DeviceDeviceEnqueueCapabilities, out byte[] enqueueCapabilities);
+			ComputeManager.HandleResultCode(resultCode, "GetDeviceInfo:DeviceDeviceEnqueueCapabilities");
+			bool deviceQueueSupported = (enqueueCapabilities[0] & (byte)DeviceEnqueueCapabilities.Supported) > 0;
+			if (!deviceQueueSupported)
+				Console.WriteLine("Device queue not supported");
+			bool deviceQueueReplacableDefault = (enqueueCapabilities[0] & (byte)DeviceEnqueueCapabilities.ReplaceableDefault) > 0;
 
 			var props = new CLContextProperties(platform)
 			{
@@ -65,22 +72,28 @@ namespace SvoTracer.Kernel
 
 			var context = CL.CreateContextFromType(props, DeviceType.Gpu, null, IntPtr.Zero, out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateContextFromType");
+
 			var commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);
-			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties");
+			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:commandQueue");
+
+			// Create the on device command queue - required for enqueue_kernel
+			var deviceCommandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(CommandQueueProperties.OnDevice | CommandQueueProperties.OnDeviceDefault | CommandQueueProperties.OutOfOrderExecModeEnable), out resultCode);
+			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:deviceCommandQueue");
+
 
 			var programSources = programFiles.Select(x => KernelLoader.Get(x)).ToArray();
 
 			var program = CL.CreateProgramWithSource(context, programFiles.Select(x => KernelLoader.Get(x)).ToArray(), out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateProgramWithSource");
-			resultCode = CL.BuildProgram(program, new[] { device }, null, null, IntPtr.Zero);
+			resultCode = CL.BuildProgram(program, new[] { device }, "-cl-std=CL3.0", null, IntPtr.Zero);
 			if (resultCode == CLResultCode.BuildProgramFailure)
 			{
-				CL.GetProgramBuildInfo(program, device, ProgramBuildInfo.Log, out byte[] bytes);
-				Console.WriteLine(Encoding.ASCII.GetString(bytes));
+				CL.GetProgramBuildInfo(program, device, ProgramBuildInfo.Log, out byte[] buildLog);
+				Console.WriteLine(Encoding.ASCII.GetString(buildLog));
 			}
 			ComputeManager.HandleResultCode(resultCode, "BuildProgram");
 
-			return new ComputeManager(context, commandQueue, program);
+			return new ComputeManager(context, commandQueue, deviceCommandQueue, program);
 		}
 	}
 }

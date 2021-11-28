@@ -26,6 +26,9 @@ namespace SvoTracer.Kernel
 		GraftingBlocks,
 		GraftingAddresses,
 		HoldingAddresses,
-		AddressPosition
+		AddressPosition,
+		TestA,
+		TestB,
+		TestC
 	}
 }
