@@ -57,6 +57,8 @@ namespace SvoTracer.Kernel
 			if (!deviceQueueSupported)
 				Console.WriteLine("Device queue not supported");
 			bool deviceQueueReplacableDefault = (enqueueCapabilities[0] & (byte)DeviceEnqueueCapabilities.ReplaceableDefault) > 0;
+			if (!deviceQueueReplacableDefault)
+				Console.WriteLine("Device queue replacable default not supported");
 
 			var props = new CLContextProperties(platform)
 			{
@@ -73,15 +75,13 @@ namespace SvoTracer.Kernel
 			var context = CL.CreateContextFromType(props, DeviceType.Gpu, null, IntPtr.Zero, out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateContextFromType");
 
-			var commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);
-			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:commandQueue");
-
 			// Create the on device command queue - required for enqueue_kernel
 			var deviceCommandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(CommandQueueProperties.OnDevice | CommandQueueProperties.OnDeviceDefault | CommandQueueProperties.OutOfOrderExecModeEnable), out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:deviceCommandQueue");
 
 
-			var programSources = programFiles.Select(x => KernelLoader.Get(x)).ToArray();
+			var commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);
+			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:commandQueue");
 
 			var program = CL.CreateProgramWithSource(context, programFiles.Select(x => KernelLoader.Get(x)).ToArray(), out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateProgramWithSource");

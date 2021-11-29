@@ -1,12 +1,8 @@
-﻿kernel void test(global int *a, global int *b, global float *c) {
-  queue_t default_queue = get_default_queue();
+﻿kernel void test(global int *out) {
   int i = get_global_id(0);
-  if (default_queue != 0) {
-    c[i] = 1;
-    // enqueue_kernel(default_queue, CLK_ENQUEUE_FLAGS_WAIT_KERNEL, ndrange_1D(1),
-    //                ^(void){
-    //                });
+  if (get_default_queue() != 0) {
+    out[i] = 1;
   } else {
-    c[i] = 2;
+    out[i] = 2;
   }
 }

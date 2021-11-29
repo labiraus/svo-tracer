@@ -3,6 +3,7 @@ using SvoTracer.Domain;
 using SvoTracer.Domain.Geometry;
 using SvoTracer.Domain.Interfaces;
 using SvoTracer.Domain.Models;
+using SvoTracer.Kernel;
 using System;
 
 namespace SvoTracer.Window
@@ -12,6 +13,7 @@ namespace SvoTracer.Window
 		[STAThread]
 		private static void Main(string[] args)
 		{
+			new EnqueueTest().Run();
 			byte BaseDepth = 4;
 			byte maxDepth = 9;
 			var treeName = "sphere" + maxDepth;
