@@ -14,6 +14,16 @@ namespace SvoTracer.Kernel
 		CLProgram program;
 		CLKernel kernel;
 
+		string kernelSource = @"
+kernel void test(global int *out) {
+  int i = get_global_id(0);
+  if (get_default_queue() != 0) {
+    out[i] = 1;
+  } else {
+    out[i] = 2;
+  }
+}";
+
 		public EnqueueTest()
 		{
 			ListDevices();
@@ -31,7 +41,7 @@ namespace SvoTracer.Kernel
 			commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);
 			HandleResultCode(resultCode, "CreateCommandQueueWithProperties:commandQueue");
 
-			program = CL.CreateProgramWithSource(context, KernelLoader.Get("test.cl"), out resultCode);
+			program = CL.CreateProgramWithSource(context, kernelSource, out resultCode);
 			HandleResultCode(resultCode, "CreateProgramWithSource");
 
 			resultCode = CL.BuildProgram(program, new[] { device }, "-cl-std=CL3.0", null, IntPtr.Zero);
