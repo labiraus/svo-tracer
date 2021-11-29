@@ -1,10 +1,6 @@
 ﻿using OpenTK.Compute.OpenCL;
-using SvoTracer.Kernel;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace SvoTracer.Kernel
 {
@@ -26,17 +22,17 @@ namespace SvoTracer.Kernel
 			CLResultCode resultCode;
 
 			context = CL.CreateContextFromType(new CLContextProperties(platform), DeviceType.Gpu, null, IntPtr.Zero, out resultCode);
-			ComputeManager.HandleResultCode(resultCode, "CreateContextFromType");
+			HandleResultCode(resultCode, "CreateContextFromType");
 
 			// Create the on device command queue - required for enqueue_kernel
 			deviceCommandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(CommandQueueProperties.OnDevice | CommandQueueProperties.OnDeviceDefault | CommandQueueProperties.OutOfOrderExecModeEnable), out resultCode);
-			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:deviceCommandQueue");
+			HandleResultCode(resultCode, "CreateCommandQueueWithProperties:deviceCommandQueue");
 
 			commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);
-			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:commandQueue");
+			HandleResultCode(resultCode, "CreateCommandQueueWithProperties:commandQueue");
 
 			program = CL.CreateProgramWithSource(context, KernelLoader.Get("test.cl"), out resultCode);
-			ComputeManager.HandleResultCode(resultCode, "CreateProgramWithSource");
+			HandleResultCode(resultCode, "CreateProgramWithSource");
 
 			resultCode = CL.BuildProgram(program, new[] { device }, "-cl-std=CL3.0", null, IntPtr.Zero);
 			if (resultCode == CLResultCode.BuildProgramFailure)
@@ -44,37 +40,37 @@ namespace SvoTracer.Kernel
 				CL.GetProgramBuildInfo(program, device, ProgramBuildInfo.Log, out byte[] buildLog);
 				Console.WriteLine(Encoding.ASCII.GetString(buildLog));
 			}
-			ComputeManager.HandleResultCode(resultCode, "BuildProgram");
+			HandleResultCode(resultCode, "BuildProgram");
 
 			kernel = CL.CreateKernel(program, "test", out resultCode);
-			ComputeManager.HandleResultCode(resultCode, "CreateKernel");
+			HandleResultCode(resultCode, "CreateKernel");
 		}
 
 		private void ListDevices()
 		{
 			CLResultCode resultCode = CL.GetPlatformIDs(out CLPlatform[] platformIds);
-			ComputeManager.HandleResultCode(resultCode, "CL.GetPlatformIds");
+			HandleResultCode(resultCode, "CL.GetPlatformIds");
 			foreach (var platformId in platformIds)
 			{
 				resultCode = CL.GetPlatformInfo(platformId, PlatformInfo.Version, out byte[] version);
-				ComputeManager.HandleResultCode(resultCode, "CL.GetPlatformInfo:Version");
+				HandleResultCode(resultCode, "CL.GetPlatformInfo:Version");
 				var versionString = Encoding.ASCII.GetString(version);
 
 				resultCode = CL.GetPlatformInfo(platformId, PlatformInfo.Name, out byte[] platformName);
-				ComputeManager.HandleResultCode(resultCode, "CL.GetPlatformInfo:Name");
+				HandleResultCode(resultCode, "CL.GetPlatformInfo:Name");
 				var platformNameString = Encoding.ASCII.GetString(platformName);
 
 				resultCode = CL.GetDeviceIDs(platformId, DeviceType.All, out CLDevice[] devices);
-				ComputeManager.HandleResultCode(resultCode, "GetDeviceIDs");
+				HandleResultCode(resultCode, "GetDeviceIDs");
 
 				foreach (var deviceId in devices)
 				{
 					resultCode = CL.GetDeviceInfo(deviceId, DeviceInfo.Name, out byte[] deviceName);
-					ComputeManager.HandleResultCode(resultCode, "CL.GetDeviceInfo:Name");
+					HandleResultCode(resultCode, "CL.GetDeviceInfo:Name");
 					var deviceNameString = Encoding.ASCII.GetString(deviceName);
 
 					resultCode = CL.GetDeviceInfo(deviceId, DeviceInfo.DriverVersion, out byte[] driverVersion);
-					ComputeManager.HandleResultCode(resultCode, "CL.GetDeviceInfo:Name");
+					HandleResultCode(resultCode, "CL.GetDeviceInfo:Name");
 					var driverVersionString = Encoding.ASCII.GetString(driverVersion);
 
 					Console.WriteLine($"Version: {versionString}, Platform: {platformNameString}, Device: {deviceNameString}, Driver: {driverVersionString}");
@@ -85,7 +81,7 @@ namespace SvoTracer.Kernel
 		private void GetPlatform()
 		{
 			CLResultCode resultCode = CL.GetPlatformIDs(out CLPlatform[] platformIds);
-			ComputeManager.HandleResultCode(resultCode, "CL.GetPlatformIds");
+			HandleResultCode(resultCode, "CL.GetPlatformIds");
 			foreach (var platformId in platformIds)
 			{
 				platform = platformId;
@@ -100,11 +96,11 @@ namespace SvoTracer.Kernel
 		private void GetDevice()
 		{
 			CLResultCode resultCode = CL.GetDeviceIDs(platform, DeviceType.Gpu, out CLDevice[] devices);
-			ComputeManager.HandleResultCode(resultCode, "GetDeviceIDs");
+			HandleResultCode(resultCode, "GetDeviceIDs");
 			foreach (var deviceId in devices)
 			{
 				resultCode = CL.GetDeviceInfo(deviceId, DeviceInfo.DeviceDeviceEnqueueCapabilities, out byte[] enqueueCapabilities);
-				ComputeManager.HandleResultCode(resultCode, "GetDeviceInfo:DeviceDeviceEnqueueCapabilities");
+				HandleResultCode(resultCode, "GetDeviceInfo:DeviceDeviceEnqueueCapabilities");
 				if ((enqueueCapabilities[0] & (byte)DeviceEnqueueCapabilities.Supported) > 0)
 				{
 					device = deviceId;
@@ -121,10 +117,10 @@ namespace SvoTracer.Kernel
 		{
 			CLResultCode resultCode;
 			var buffer = CL.CreateBuffer(context, MemoryFlags.WriteOnly, sizeof(int), IntPtr.Zero, out resultCode);
-			ComputeManager.HandleResultCode(resultCode, $"CreateBuffer");
+			HandleResultCode(resultCode, $"CreateBuffer");
 
 			resultCode = CL.SetKernelArg(kernel, 0, buffer);
-			ComputeManager.HandleResultCode(resultCode, $"SetKernelArg");
+			HandleResultCode(resultCode, $"SetKernelArg");
 
 			CL.GetCommandQueueInfo(commandQueue, CommandQueueInfo.DeviceDefault, out byte[] commandProps);
 			if ((IntPtr)BitConverter.ToUInt64(commandProps, 0) == commandQueue.Handle)
@@ -135,18 +131,35 @@ namespace SvoTracer.Kernel
 				Console.WriteLine("unknown default command queue");
 
 			resultCode = CL.EnqueueNDRangeKernel(commandQueue, kernel, 1, null, new nuint[] { 1 }, null, null, out CLEvent kernelRun);
-			ComputeManager.HandleResultCode(resultCode, "EnqueueNDRangeKernel");
+			HandleResultCode(resultCode, "EnqueueNDRangeKernel");
 
 			resultCode = CL.Flush(commandQueue);
-			ComputeManager.HandleResultCode(resultCode, $"Flush");
+			HandleResultCode(resultCode, $"Flush");
 
 			CL.WaitForEvents(new[] { kernelRun });
 
 			var output = new int[1];
 			resultCode = CL.EnqueueReadBuffer(commandQueue, buffer, true, 0, output, null, out _);
-			ComputeManager.HandleResultCode(resultCode, $"EnqueueReadBuffer");
+			HandleResultCode(resultCode, $"EnqueueReadBuffer");
 
-			Console.WriteLine(output[0]);
+			switch (output[0])
+			{
+				case 0:
+					Console.WriteLine("Error");
+					break;
+				case 1:
+					Console.WriteLine("Success");
+					break;
+				case 2:
+					Console.WriteLine("Failure");
+					break;
+			}
+		}
+
+		private static void HandleResultCode(CLResultCode resultCode, string method)
+		{
+			if (resultCode != CLResultCode.Success)
+				throw new Exception($"{method}: {Enum.GetName(resultCode)}");
 		}
 	}
 }
