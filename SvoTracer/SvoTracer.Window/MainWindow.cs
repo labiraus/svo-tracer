@@ -39,38 +39,13 @@ namespace SvoTracer.Window
 			})
 		{
 			_stateManager = new(input);
-			_computeManager = buildComputeManager(new[] { "test.cl" });
-			testKernel();
+			_computeManager = buildComputeManager(new[] { "kernel.cl" });
 			setupKernels(tree);
 		}
 
 		unsafe private ComputeManager buildComputeManager(string[] kernelName)
 		{
 			return ComputeManagerFactory.Build(GLFW.GetWGLContext(WindowPtr), GLFW.GetWin32Window(base.WindowPtr), kernelName);
-		}
-
-		private void testKernel()
-		{
-			_computeManager.InitReadBuffer(BufferName.TestA, new int[] { 1, 2, 3 });
-			_computeManager.InitReadBuffer(BufferName.TestB, new int[] { 2, 4, 6 });
-			_computeManager.InitWriteBuffer<float>(BufferName.TestC, 3);
-
-			_computeManager.SetArg(KernelName.Test, "a", BufferName.TestA);
-			_computeManager.SetArg(KernelName.Test, "b", BufferName.TestB);
-			_computeManager.SetArg(KernelName.Test, "c", BufferName.TestC);
-			//_computeManager.SetDeviceCommandQueueArg(KernelName.Test, "q");
-
-
-			var kernelRun = _computeManager.Enqueue(KernelName.Test, new nuint[] { 3 });
-			_computeManager.Flush();
-
-			_computeManager.Wait(new[] { kernelRun });
-			var output = new float[3];
-			_computeManager.ReadBuffer(BufferName.TestC, output);
-			foreach (var val in output)
-			{
-				Console.WriteLine(val);
-			}
 		}
 
 		private void setupKernels(Octree octree)
