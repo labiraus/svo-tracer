@@ -20,8 +20,8 @@ kernel void test(global int *out) {
 
 		public EnqueueTest()
 		{
-			//ListDevices();
-			//Console.WriteLine();
+			ListDevices();
+			Console.WriteLine();
 			TestAll();
 		}
 
@@ -51,8 +51,11 @@ kernel void test(global int *out) {
 					resultCode = CL.GetDeviceInfo(deviceId, DeviceInfo.DriverVersion, out byte[] driverVersion);
 					HandleResultCode(resultCode, "CL.GetDeviceInfo:DriverVersion");
 					var driverVersionString = Encoding.ASCII.GetString(driverVersion);
+					resultCode = CL.GetDeviceInfo(deviceId, DeviceInfo.DeviceDeviceEnqueueCapabilities, out byte[] enqueueCapabilities);
+					HandleResultCode(resultCode, "GetDeviceInfo:DeviceDeviceEnqueueCapabilities");
+					var supported = (enqueueCapabilities[0] & (byte)DeviceEnqueueCapabilities.Supported) > 0;
 
-					Console.WriteLine($"Version: {versionString}, Platform: {platformNameString}, Device: {deviceNameString}, Driver: {driverVersionString}");
+					Console.WriteLine($"Version: {versionString}, Platform: {platformNameString}, Device: {deviceNameString}, Driver: {driverVersionString}, Device Side Enqueue Supported: {supported}");
 				}
 			}
 		}
@@ -73,7 +76,7 @@ kernel void test(global int *out) {
 
 		private IEnumerable<CLDevice> GetDevices(CLPlatform platform)
 		{
-			CLResultCode resultCode = CL.GetDeviceIDs(platform, DeviceType.Gpu, out CLDevice[] devices);
+			CLResultCode resultCode = CL.GetDeviceIDs(platform, DeviceType.All, out CLDevice[] devices);
 			HandleResultCode(resultCode, "GetDeviceIDs");
 			foreach (var deviceId in devices)
 			{
@@ -90,7 +93,7 @@ kernel void test(global int *out) {
 		{
 			CLResultCode resultCode;
 
-			var context = CL.CreateContextFromType(new CLContextProperties(platform), DeviceType.Gpu, null, IntPtr.Zero, out resultCode);
+			var context = CL.CreateContextFromType(new CLContextProperties(platform), DeviceType.All, null, IntPtr.Zero, out resultCode);
 			HandleResultCode(resultCode, "CreateContextFromType");
 
 			// Create the on device command queue - required for enqueue_kernel
