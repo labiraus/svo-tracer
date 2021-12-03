@@ -93,11 +93,11 @@ kernel void test(global int *out) {
 		{
 			CLResultCode resultCode;
 
-			var context = CL.CreateContextFromType(new CLContextProperties(platform), DeviceType.All, null, IntPtr.Zero, out resultCode);
+			var context = CL.CreateContextFromType(new CLContextProperties() { ContextPlatform = platform }, DeviceType.All, null, IntPtr.Zero, out resultCode);
 			HandleResultCode(resultCode, "CreateContextFromType");
 
 			// Create the on device command queue - required for enqueue_kernel
-			var deviceCommandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(CommandQueueProperties.OnDevice | CommandQueueProperties.OnDeviceDefault | CommandQueueProperties.OutOfOrderExecModeEnable), out resultCode);
+			var deviceCommandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties() { Properties = CommandQueueProperties.OnDevice | CommandQueueProperties.OnDeviceDefault | CommandQueueProperties.OutOfOrderExecModeEnable }, out resultCode);
 			HandleResultCode(resultCode, "CreateCommandQueueWithProperties:deviceCommandQueue");
 
 			var commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);

@@ -172,9 +172,9 @@ namespace SvoTracer.Kernel
 				_data.Origin.Z - ulongToFloat(_data.Location.Z)).Length), ref _data), 2);
 		}
 
-		static BlockData background(ref WorkingData _data)
+		static SurfaceData background(ref WorkingData _data)
 		{
-			return new BlockData()
+			return new SurfaceData()
 			{
 				ColourR = 0,
 				ColourB = 0,
@@ -195,7 +195,7 @@ namespace SvoTracer.Kernel
 		/// <param name="block"></param>
 		/// <param name="_data"></param>
 		/// <returns>Whether max opacity has been reached</returns>
-		static bool saveVoxelTrace(BlockData blockData, ref WorkingData _data)
+		static bool saveVoxelTrace(SurfaceData blockData, ref WorkingData _data)
 		{
 			Vector3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
 			// _data->ColourR = normal.x;
@@ -222,7 +222,7 @@ namespace SvoTracer.Kernel
 			writeData(image, ref _data);
 		}
 
-		static BlockData average(uint address, Block[] blocks, ref WorkingData _data)
+		static SurfaceData average(uint address, Block[] blocks, ref WorkingData _data)
 		{
 			//Average like heck            
 			return blocks[address].Data;
@@ -1091,7 +1091,7 @@ namespace SvoTracer.Kernel
 							bool[] parentResidency, Parent[] parents,
 							uint2[] dereferenceQueue,
 							ref int dereferenceRemaining, ref int semaphor,
-							Pruning[] pruning, BlockData[] pruningBlockData,
+							Pruning[] pruning, SurfaceData[] pruningBlockData,
 							ulong[] pruningAddresses, UpdateInputData inputData)
 		{
 			uint x = get_global_id(0);

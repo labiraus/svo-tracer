@@ -11,7 +11,7 @@ namespace SvoTracer.Window
 	{
 		private readonly object _pruningBufferLock = new();
 		private List<Pruning> pruning = new();
-		private List<BlockData> pruningBlockData = new();
+		private List<SurfaceData> pruningBlockData = new();
 		private List<Location> pruningAddresses = new();
 
 		private readonly object _graftingBufferLock = new();
@@ -23,7 +23,7 @@ namespace SvoTracer.Window
 		{
 
 			var pruningArray = Array.Empty<Pruning>();
-			var pruningBlockDataArray = Array.Empty<BlockData>();
+			var pruningBlockDataArray = Array.Empty<SurfaceData>();
 			var pruningAddressesArray = Array.Empty<Location>();
 
 			lock (_pruningBufferLock)
@@ -35,7 +35,7 @@ namespace SvoTracer.Window
 				pruningAddressesArray = pruningAddresses.ToArray();
 
 				pruning = new List<Pruning>();
-				pruningBlockData = new List<BlockData>();
+				pruningBlockData = new List<SurfaceData>();
 				pruningAddresses = new List<Location>();
 			}
 			return new PruningData(pruningArray, pruningBlockDataArray, pruningAddressesArray);
@@ -63,7 +63,7 @@ namespace SvoTracer.Window
 			return new GraftingData(graftingArray, graftingBlocksArray, graftingAddressesArray);
 		}
 
-		public void UpdatePruning(Pruning pruningInput, BlockData? pruningBlockDataInput, Location? pruningAddressInput)
+		public void UpdatePruning(Pruning pruningInput, SurfaceData? pruningBlockDataInput, Location? pruningAddressInput)
 		{
 			lock (_pruningBufferLock)
 			{

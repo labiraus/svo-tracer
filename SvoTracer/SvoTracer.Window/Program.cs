@@ -13,7 +13,7 @@ namespace SvoTracer.Window
 		[STAThread]
 		private static void Main(string[] args)
 		{
-			new EnqueueTest();
+			//new EnqueueTest();
 			byte BaseDepth = 4;
 			byte maxDepth = 9;
 			var treeName = "sphere" + maxDepth;

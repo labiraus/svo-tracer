@@ -81,7 +81,7 @@ namespace SvoTracer.Domain
 			{
 				Chunk = MakeChunk(coordinates, depth),
 				Child = uint.MaxValue,
-				Data = new BlockData()
+				Data = new SurfaceData()
 				{
 					NormalPitch = normal.pitch,
 					NormalYaw = normal.yaw,

@@ -8,7 +8,7 @@ namespace SvoTracer.Domain.Models
 	{
 		public uint Child;
 		public ushort Chunk;
-		public BlockData Data;
+		public SurfaceData Data;
 
 		public const int Size = 16;
 	}

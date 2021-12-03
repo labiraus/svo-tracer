@@ -11,7 +11,6 @@ namespace SvoTracer.Kernel
 	{
 		private readonly CLContext _context;
 		private readonly CLCommandQueue _commandQueue;
-		private readonly CLCommandQueue _deviceCommandQueue;
 		private readonly CLProgram _program;
 		private CLImage renderbuffer = CLImage.Zero;
 		private readonly Dictionary<KernelName, CLKernel> _kernels = new Dictionary<KernelName, CLKernel>();
@@ -19,11 +18,10 @@ namespace SvoTracer.Kernel
 		private readonly Dictionary<KernelName, Dictionary<string, uint>> _argumentPositions = new Dictionary<KernelName, Dictionary<string, uint>>();
 
 
-		internal ComputeManager(CLContext context, CLCommandQueue commandQueue, CLCommandQueue deviceCommandQueue, CLProgram program)
+		internal ComputeManager(CLContext context, CLCommandQueue commandQueue, CLProgram program)
 		{
 			_context = context;
 			_commandQueue = commandQueue;
-			_deviceCommandQueue = deviceCommandQueue;
 			_program = program;
 		}
 
@@ -72,15 +70,6 @@ namespace SvoTracer.Kernel
 
 		public CLEvent Enqueue(KernelName kernelName, nuint[] workSize, CLEvent[] waitEvents = null)
 		{
-
-			CL.GetCommandQueueInfo(_commandQueue, CommandQueueInfo.DeviceDefault, out byte[] commandProps);
-			if ((IntPtr)BitConverter.ToUInt64(commandProps, 0) == _commandQueue.Handle)
-				Console.WriteLine("_commandQueue is default");
-			else if ((IntPtr)BitConverter.ToUInt64(commandProps, 0) == _deviceCommandQueue.Handle)
-				Console.WriteLine("_deviceCommandQueue is default");
-			else
-				Console.WriteLine("unknown default command queue");
-
 			var kernel = getKernel(kernelName);
 			var resultCode = CL.EnqueueNDRangeKernel(_commandQueue, kernel, (uint)workSize.Length, null, workSize, null, waitEvents, out CLEvent kernelRun);
 			HandleResultCode(resultCode, "EnqueueNDRangeKernel");
@@ -98,7 +87,7 @@ namespace SvoTracer.Kernel
 		{
 			var kernel = getKernel(kernelName);
 			var resultCode = CL.SetKernelArg(kernel, _argumentPositions[kernelName][paramName], argument);
-			ComputeManager.HandleResultCode(resultCode, $"SetKernelArg:{kernelName}:{paramName}");
+			HandleResultCode(resultCode, $"SetKernelArg:{kernelName}:{paramName}");
 		}
 
 		public void SetArg(KernelName kernelName, string paramName, BufferName bufferName)
@@ -106,15 +95,7 @@ namespace SvoTracer.Kernel
 			var kernel = getKernel(kernelName);
 			var buffer = getBuffer(bufferName);
 			var resultCode = CL.SetKernelArg(kernel, _argumentPositions[kernelName][paramName], buffer);
-			ComputeManager.HandleResultCode(resultCode, $"SetKernelArg:{kernelName}:{paramName}");
-		}
-
-		public void SetDeviceCommandQueueArg(KernelName kernelName, string paramName)
-		{
-
-			var kernel = getKernel(kernelName);
-			var resultCode = CL.SetKernelArg(kernel, _argumentPositions[kernelName][paramName], _deviceCommandQueue);
-			ComputeManager.HandleResultCode(resultCode, $"SetKernelArg:{kernelName}:{paramName}");
+			HandleResultCode(resultCode, $"SetKernelArg:{kernelName}:{paramName}");
 		}
 
 		public void Wait(CLEvent[] waitEvents)
@@ -147,6 +128,30 @@ namespace SvoTracer.Kernel
 			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
 		}
 
+		public void InitDeviceBuffer(BufferName bufferName, int arraySize, int elementSize)
+		{
+			CLResultCode resultCode;
+			if (_buffers.ContainsKey(bufferName))
+			{
+				resultCode = CL.ReleaseMemoryObject(_buffers[bufferName]);
+				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
+			}
+			_buffers[bufferName] = CL.CreateBuffer(_context, MemoryFlags.ReadWrite | MemoryFlags.HostNoAccess, (uint)(arraySize * elementSize), IntPtr.Zero, out resultCode);
+			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
+		}
+
+		public unsafe void InitDeviceBuffer<T>(BufferName bufferName, int arraySize) where T : unmanaged
+		{
+			CLResultCode resultCode;
+			if (_buffers.ContainsKey(bufferName))
+			{
+				resultCode = CL.ReleaseMemoryObject(_buffers[bufferName]);
+				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
+			}
+			_buffers[bufferName] = CL.CreateBuffer(_context, MemoryFlags.ReadWrite | MemoryFlags.HostNoAccess, (uint)(arraySize * sizeof(T)), IntPtr.Zero, out resultCode);
+			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
+		}
+
 		public void InitReadBuffer<T>(BufferName bufferName, T[] data) where T : unmanaged
 		{
 			CLResultCode resultCode;
@@ -167,7 +172,6 @@ namespace SvoTracer.Kernel
 				resultCode = CL.ReleaseMemoryObject(_buffers[bufferName]);
 				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
 			}
-			var array = new T[arraySize];
 			_buffers[bufferName] = CL.CreateBuffer(_context, MemoryFlags.WriteOnly, (uint)(arraySize * sizeof(T)), IntPtr.Zero, out resultCode);
 			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
 		}
@@ -231,7 +235,7 @@ namespace SvoTracer.Kernel
 				case KernelName.SpawnRays:
 					break;
 				case KernelName.TraceVoxel:
-					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "outputImage", "_input" };
+					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "depthMask", "outputImage", "_input" };
 					break;
 				case KernelName.TraceMesh:
 					break;

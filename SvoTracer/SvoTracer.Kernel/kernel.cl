@@ -8,12 +8,20 @@ typedef struct {
   uchar ColourG;
   uchar Opacity;
   ushort Properties;
-} BlockData;
+} SurfaceData;
+
+typedef struct {
+  float RayLength;
+  float3 Incidence;
+  float3 Position;
+  float ConeDepth;
+  SurfaceData Data;
+} DepthMask;
 
 typedef struct {
   uint Child;
   ushort Chunk;
-  BlockData Data;
+  SurfaceData Data;
 } Block;
 
 typedef struct {
@@ -211,8 +219,8 @@ void setConeDepth(WorkingData *_data) {
   _data->ConeDepth = -half_log2(cone);
 }
 
-BlockData background(WorkingData *_data) {
-  BlockData output;
+SurfaceData background(WorkingData *_data) {
+  SurfaceData output;
   output.ColourR = 0;
   output.ColourB = 0;
   output.ColourG = 0;
@@ -224,7 +232,7 @@ void writeData(__write_only image2d_t outputImage, WorkingData *_data) {
   write_imagef(outputImage, _data->Coord, (float4)(_data->ColourR, _data->ColourG, _data->ColourB, 1));
 }
 
-BlockData average(uint address, global Block *blocks, WorkingData *_data) {
+SurfaceData average(uint address, global Block *blocks, WorkingData *_data) {
   // Average like heck
   return blocks[address].Data;
 }
@@ -994,11 +1002,11 @@ uint findAddress(global Block *blocks, global Usage *usage, global uint *childRe
 // void my_func_A(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests) {}
 
 // Combine _data colour+opacity with background colour
-bool saveVoxelTrace(BlockData blockData, global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId,
+bool saveVoxelTrace(SurfaceData SurfaceData, global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId,
                     global ChildRequest *childRequests, WorkingData *_data) {
   if (_data->Opacity < _data->MaxOpacity) {
 
-    float3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
+    float3 normal = normalVector(SurfaceData.NormalPitch, SurfaceData.NormalYaw);
     float3 reflection = _data->Direction - (2 * dot(_data->Direction, normal) * normal);
     // float shade = dot(reflection, (float3)(1, 0, 0)) * 128.0f;
     float shade = dot(normal, (float3)(1, 0, 0)) * 128.0f;
@@ -1007,16 +1015,16 @@ bool saveVoxelTrace(BlockData blockData, global ushort *bases, global Block *blo
     // _data->ColourG = normal.x;
     // reflection += (float3)(1, 1, 1);
     if (shade > 0) {
-      _data->ColourR = native_divide(blockData.ColourR + shade, 510.0f);
-      _data->ColourB = native_divide(blockData.ColourB + shade, 510.0f);
-      _data->ColourG = native_divide(blockData.ColourG + shade, 510.0f);
+      _data->ColourR = native_divide(SurfaceData.ColourR + shade, 510.0f);
+      _data->ColourB = native_divide(SurfaceData.ColourB + shade, 510.0f);
+      _data->ColourG = native_divide(SurfaceData.ColourG + shade, 510.0f);
     } else {
-      _data->ColourR = native_divide(blockData.ColourR, 510.0f);
-      _data->ColourB = native_divide(blockData.ColourB, 510.0f);
-      _data->ColourG = native_divide(blockData.ColourG, 510.0f);
+      _data->ColourR = native_divide(SurfaceData.ColourR, 510.0f);
+      _data->ColourB = native_divide(SurfaceData.ColourB, 510.0f);
+      _data->ColourG = native_divide(SurfaceData.ColourG, 510.0f);
     }
 
-    _data->Opacity = _data->Opacity + blockData.Opacity;
+    _data->Opacity = _data->Opacity + SurfaceData.Opacity;
   }
   return true;
 }
@@ -1031,7 +1039,7 @@ void writeBackgroundData(__write_only image2d_t outputImage, WorkingData *_data)
 
 kernel void prune(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests,
                   global uint *parentSize, global bool *parentResidency, global Parent *parents, global uint2 *dereferenceQueue,
-                  global int *dereferenceRemaining, global int *semaphor, global Pruning *pruning, global BlockData *pruningBlockData,
+                  global int *dereferenceRemaining, global int *semaphor, global Pruning *pruning, global SurfaceData *pruningSurfaceData,
                   global ulong *pruningAddresses, UpdateInputData inputData) {
   uint x = get_global_id(0);
   Pruning myPruning = pruning[x];
@@ -1077,7 +1085,7 @@ kernel void prune(global ushort *bases, global Block *blocks, global Usage *usag
 
   // UpdateChunk
   if ((myPruning.Properties >> 3 & 1) == 1) {
-    blocks[address].Data = pruningBlockData[x];
+    blocks[address].Data = pruningSurfaceData[x];
     blocks[address].Chunk = myPruning.Chunk;
   }
 }
@@ -1167,7 +1175,7 @@ kernel void graft(global Block *blocks, global Usage *usage, global uint *childR
 }
 
 kernel void traceVoxel(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId,
-                       global ChildRequest *childRequests, __write_only image2d_t outputImage, TraceInputData _input) {
+                       global ChildRequest *childRequests, global DepthMask * depthMask, __write_only image2d_t outputImage, TraceInputData _input) {
   uchar depth = 1;
   uint localAddress;
   ulong3 previousLocation;

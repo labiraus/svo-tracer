@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace SvoTracer.Domain.Models
 {
-	public struct BlockData
+	public struct SurfaceData
 	{
 		public short NormalPitch;
 		public short NormalYaw;

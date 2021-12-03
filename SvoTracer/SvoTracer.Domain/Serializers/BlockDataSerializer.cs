@@ -10,7 +10,7 @@ namespace SvoTracer.Domain.Serializers
 {
 	public static class BlockDataSerializer
 	{
-		public static byte[] Serialize(this BlockData[] blocks)
+		public static byte[] Serialize(this SurfaceData[] blocks)
 		{
 			var ms = new MemoryStream();
 			var writer = new BinaryWriter(ms);
@@ -19,7 +19,7 @@ namespace SvoTracer.Domain.Serializers
 			return ms.ToArray();
 		}
 
-		public static void Serialize(this BlockData blockData, BinaryWriter writer)
+		public static void Serialize(this SurfaceData blockData, BinaryWriter writer)
 		{
 			writer.Write(blockData.NormalPitch);
 			writer.Write(blockData.NormalYaw);
@@ -30,7 +30,7 @@ namespace SvoTracer.Domain.Serializers
 			writer.Write(blockData.Properties);
 		}
 
-		public static BlockData Deserialize(BinaryReader reader) => new()
+		public static SurfaceData Deserialize(BinaryReader reader) => new()
 		{
 			NormalPitch = reader.ReadInt16(),
 			NormalYaw = reader.ReadInt16(),
@@ -41,7 +41,7 @@ namespace SvoTracer.Domain.Serializers
 			Properties = reader.ReadUInt16()
 		};
 
-		public static BlockData Deserialize(byte[] data) => new()
+		public static SurfaceData Deserialize(byte[] data) => new()
 		{
 			NormalPitch = BitConverter.ToInt16(data, 0),
 			NormalYaw = BitConverter.ToInt16(data, 2),

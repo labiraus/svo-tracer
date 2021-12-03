@@ -37,7 +37,7 @@ namespace SvoTracer.Domain.Serializers
 		{
 			Child = BitConverter.ToUInt32(data, 0),
 			Chunk = BitConverter.ToUInt16(data, 4),
-			Data = BlockDataSerializer.Deserialize(data[(Block.Size - BlockData.Size)..Block.Size])
+			Data = BlockDataSerializer.Deserialize(data[(Block.Size - SurfaceData.Size)..Block.Size])
 		};
 	}
 }

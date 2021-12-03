@@ -27,8 +27,6 @@ namespace SvoTracer.Kernel
 		GraftingAddresses,
 		HoldingAddresses,
 		AddressPosition,
-		TestA,
-		TestB,
-		TestC
+		DepthMask
 	}
 }

@@ -127,7 +127,7 @@ namespace SvoTracer.Window
 				// Set up the buffers
 				framebuffer = GL.CreateFramebuffer();
 				GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
-				initRenderBuffer();
+				initScreenBuffers();
 				initialized = true;
 			}
 			catch (Exception ex)
@@ -143,7 +143,7 @@ namespace SvoTracer.Window
 			}
 		}
 
-		private void initRenderBuffer()
+		private void initScreenBuffers()
 		{
 			// Remove buffers if they already exist
 			if (glRenderbuffer != RenderbufferHandle.Zero)
@@ -160,6 +160,8 @@ namespace SvoTracer.Window
 
 			// Setup CL renderbuffer
 			_computeManager.InitRenderbuffer((uint)glRenderbuffer.Handle);
+			_computeManager.InitDeviceBuffer(BufferName.DepthMask, Size.X * Size.Y, DepthMask.Size);
+			_computeManager.SetArg(KernelName.TraceVoxel, "depthMask", BufferName.DepthMask);
 		}
 
 		#endregion
@@ -257,7 +259,7 @@ namespace SvoTracer.Window
 		{
 			base.OnResize(e);
 
-			initRenderBuffer();
+			initScreenBuffers();
 			_stateManager.UpdateScreenSize(Size);
 		}
 

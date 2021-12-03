@@ -51,17 +51,9 @@ namespace SvoTracer.Kernel
 				throw new Exception("Device supporting cl_khr_gl_sharing not found");
 			}
 
-			resultCode = CL.GetDeviceInfo(device, DeviceInfo.DeviceDeviceEnqueueCapabilities, out byte[] enqueueCapabilities);
-			ComputeManager.HandleResultCode(resultCode, "GetDeviceInfo:DeviceDeviceEnqueueCapabilities");
-			bool deviceQueueSupported = (enqueueCapabilities[0] & (byte)DeviceEnqueueCapabilities.Supported) > 0;
-			if (!deviceQueueSupported)
-				Console.WriteLine("Device queue not supported");
-			bool deviceQueueReplacableDefault = (enqueueCapabilities[0] & (byte)DeviceEnqueueCapabilities.ReplaceableDefault) > 0;
-			if (!deviceQueueReplacableDefault)
-				Console.WriteLine("Device queue replacable default not supported");
-
-			var props = new CLContextProperties(platform)
+			var props = new CLContextProperties()
 			{
+				ContextPlatform = platform,
 				// if windows
 				ContextInteropUserSync = true,
 				GlContextKHR = glContext,
@@ -74,11 +66,6 @@ namespace SvoTracer.Kernel
 
 			var context = CL.CreateContextFromType(props, DeviceType.Gpu, null, IntPtr.Zero, out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateContextFromType");
-
-			// Create the on device command queue - required for enqueue_kernel
-			var deviceCommandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(CommandQueueProperties.OnDevice | CommandQueueProperties.OnDeviceDefault | CommandQueueProperties.OutOfOrderExecModeEnable), out resultCode);
-			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:deviceCommandQueue");
-
 
 			var commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:commandQueue");
@@ -93,7 +80,7 @@ namespace SvoTracer.Kernel
 			}
 			ComputeManager.HandleResultCode(resultCode, "BuildProgram");
 
-			return new ComputeManager(context, commandQueue, deviceCommandQueue, program);
+			return new ComputeManager(context, commandQueue, program);
 		}
 	}
 }
