@@ -4,9 +4,9 @@ using OpenTK.Mathematics;
 
 namespace SvoTracer.Domain.Models
 {
-	public struct TraceInputData
+	public struct PrimeTraceData
 	{
-		public TraceInputData(
+		public PrimeTraceData(
 			Vector3 origin,
 			Matrix3 facing,
 			Vector2 foV,

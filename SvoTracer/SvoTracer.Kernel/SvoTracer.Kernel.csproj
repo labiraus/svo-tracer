@@ -7,7 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="headers.cl" />
     <None Remove="kernel.cl" />
+    <None Remove="models.h" />
     <None Remove="test.cl" />
   </ItemGroup>
 
@@ -29,6 +31,10 @@
     <Reference Include="OpenTK.Mathematics">
       <HintPath>..\..\..\opentk\src\OpenTK.Mathematics\bin\Debug\netcoreapp3.1\OpenTK.Mathematics.dll</HintPath>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="headers.cl" />
   </ItemGroup>
 
 </Project>

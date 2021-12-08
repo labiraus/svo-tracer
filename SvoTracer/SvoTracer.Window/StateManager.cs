@@ -10,7 +10,7 @@ namespace SvoTracer.Window
 	{
 		private const float flySpeed = 0.001f;
 		private const float turnSpeed = 20000.0f;
-		public TraceInputData TraceInput;
+		public PrimeTraceData TraceInput;
 		public UpdateInputData UpdateInput = new()
 		{
 			MaxChildRequestId = 6000,
@@ -20,7 +20,7 @@ namespace SvoTracer.Window
 		public Stopwatch timer = new();
 		public ushort Tick { get; set; } = 0;
 
-		public StateManager(TraceInputData input)
+		public StateManager(PrimeTraceData input)
 		{
 			TraceInput = input;
 		}

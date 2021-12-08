@@ -210,13 +210,7 @@ namespace SvoTracer.Kernel
 			{
 				KernelName.Prune => "prune",
 				KernelName.Graft => "graft",
-				KernelName.SpawnRays => "spawnRays",
-				KernelName.TraceVoxel => "traceVoxel",
-				KernelName.TraceMesh => "traceMesh",
-				KernelName.TraceParticle => "traceParticle",
-				KernelName.TraceLight => "traceLight",
-				KernelName.ResolveImage => "resolveImage",
-				KernelName.Test => "test",
+				KernelName.Trace => "trace",
 				_ => throw new Exception($"Kernel name {name} not found"),
 			};
 		}
@@ -232,21 +226,8 @@ namespace SvoTracer.Kernel
 				case KernelName.Graft:
 					paramList = new[] { "blocks", "usage", "childRequestId", "childRequests", "parentSize", "parentResidency", "parents", "dereferenceQueue", "dereferenceRemaining", "semaphor", "grafting", "graftingBlocks", "graftingAddresses", "holdingAddresses", "addressPosition", "inputData" };
 					break;
-				case KernelName.SpawnRays:
-					break;
-				case KernelName.TraceVoxel:
-					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "depthMask", "outputImage", "_input" };
-					break;
-				case KernelName.TraceMesh:
-					break;
-				case KernelName.TraceParticle:
-					break;
-				case KernelName.TraceLight:
-					break;
-				case KernelName.ResolveImage:
-					break;
-				case KernelName.Test:
-					paramList = new[] { "a", "b", "c", "q" };
+				case KernelName.Trace:
+					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "outputImage", "_input" };
 					break;
 				default:
 					throw new Exception($"Kernel name {name} not found");

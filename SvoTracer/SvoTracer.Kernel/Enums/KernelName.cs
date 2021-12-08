@@ -10,12 +10,6 @@ namespace SvoTracer.Kernel
 	{
 		Prune,
 		Graft,
-		SpawnRays,
-		TraceVoxel,
-		TraceMesh,
-		TraceParticle,
-		TraceLight,
-		ResolveImage,
-		Test
+		Trace
 	}
 }

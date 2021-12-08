@@ -70,7 +70,8 @@ namespace SvoTracer.Kernel
 			var commandQueue = CL.CreateCommandQueueWithProperties(context, device, new CLCommandQueueProperties(), out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateCommandQueueWithProperties:commandQueue");
 
-			var program = CL.CreateProgramWithSource(context, programFiles.Select(x => KernelLoader.Get(x)).ToArray(), out resultCode);
+			var source = programFiles.Select(x => KernelLoader.Get(x)).ToArray();
+			var program = CL.CreateProgramWithSource(context, source, out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateProgramWithSource");
 			resultCode = CL.BuildProgram(program, new[] { device }, "-cl-std=CL3.0", null, IntPtr.Zero);
 			if (resultCode == CLResultCode.BuildProgramFailure)

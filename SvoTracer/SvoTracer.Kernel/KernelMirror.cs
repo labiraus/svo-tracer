@@ -891,7 +891,7 @@ namespace SvoTracer.Kernel
 		/// <param name="ANG">Direction faced</param>
 		/// <param name="EYE">Horizonal/vertical FoV angle</param>
 		/// <param name="SCR">Screen size</param>
-		static WorkingData setup(Vector2i coord, ref TraceInputData _input)
+		static WorkingData setup(Vector2i coord, ref PrimeTraceData _input)
 		{
 			WorkingData data = new();
 			data.Coord = new Vector2i(coord[0], coord[1]);
@@ -1291,7 +1291,7 @@ namespace SvoTracer.Kernel
 						 Usage[] usage, ref uint childRequestId,
 						 ChildRequest[] childRequests,
 						 string outputImage,
-						 TraceInputData _input)
+						 PrimeTraceData _input)
 		{
 			byte depth = 1;
 			uint localAddress;

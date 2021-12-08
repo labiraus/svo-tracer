@@ -31,7 +31,7 @@ namespace SvoTracer.Window
 		#endregion
 
 		#region //Constructor
-		public MainWindow(int width, int height, string title, Octree tree, TraceInputData input)
+		public MainWindow(int width, int height, string title, Octree tree, PrimeTraceData input)
 			: base(GameWindowSettings.Default, new NativeWindowSettings()
 			{
 				Title = title,
@@ -43,9 +43,9 @@ namespace SvoTracer.Window
 			setupKernels(tree);
 		}
 
-		unsafe private ComputeManager buildComputeManager(string[] kernelName)
+		unsafe private ComputeManager buildComputeManager(string[] programFiles)
 		{
-			return ComputeManagerFactory.Build(GLFW.GetWGLContext(WindowPtr), GLFW.GetWin32Window(base.WindowPtr), kernelName);
+			return ComputeManagerFactory.Build(GLFW.GetWGLContext(WindowPtr), GLFW.GetWin32Window(base.WindowPtr), programFiles);
 		}
 
 		private void setupKernels(Octree octree)
@@ -105,16 +105,17 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.Graft, "dereferenceRemaining", BufferName.DereferenceRemaining);
 			_computeManager.SetArg(KernelName.Graft, "semaphor", BufferName.Semaphor);
 
-			_computeManager.SetArg(KernelName.TraceVoxel, "bases", BufferName.BaseBlocks);
-			_computeManager.SetArg(KernelName.TraceVoxel, "blocks", BufferName.Blocks);
-			_computeManager.SetArg(KernelName.TraceVoxel, "usage", BufferName.Usage);
-			_computeManager.SetArg(KernelName.TraceVoxel, "childRequestId", BufferName.ChildRequestId);
-			_computeManager.SetArg(KernelName.TraceVoxel, "childRequests", BufferName.ChildRequests);
+			_computeManager.SetArg(KernelName.Trace, "bases", BufferName.BaseBlocks);
+			_computeManager.SetArg(KernelName.Trace, "blocks", BufferName.Blocks);
+			_computeManager.SetArg(KernelName.Trace, "usage", BufferName.Usage);
+			_computeManager.SetArg(KernelName.Trace, "childRequestId", BufferName.ChildRequestId);
+			_computeManager.SetArg(KernelName.Trace, "childRequests", BufferName.ChildRequests);
 		}
 
 		#endregion
 
 		#region //Load
+
 		protected override void OnLoad()
 		{
 			base.OnLoad();
@@ -160,8 +161,6 @@ namespace SvoTracer.Window
 
 			// Setup CL renderbuffer
 			_computeManager.InitRenderbuffer((uint)glRenderbuffer.Handle);
-			_computeManager.InitDeviceBuffer(BufferName.DepthMask, Size.X * Size.Y, DepthMask.Size);
-			_computeManager.SetArg(KernelName.TraceVoxel, "depthMask", BufferName.DepthMask);
 		}
 
 		#endregion
@@ -235,16 +234,19 @@ namespace SvoTracer.Window
 		private void runTrace()
 		{
 			//Flush child request buffer
-			_computeManager.WriteBuffer(BufferName.ChildRequestId, new uint[] { 0 });
 			var (renderbuffer, waitEvent) = _computeManager.AcquireRenderbuffer();
-			_computeManager.SetArg(KernelName.TraceVoxel, "outputImage", renderbuffer);
-			_computeManager.SetArg(KernelName.TraceVoxel, "_input", _stateManager.TraceInput.Serialize());
+			_computeManager.SetArg(KernelName.Trace, "outputImage", renderbuffer);
+			var waitEvent2 = _computeManager.WriteBuffer(BufferName.ChildRequestId, new uint[] { 0 });
+			_computeManager.SetArg(KernelName.Trace, "_input", _stateManager.TraceInput.Serialize());
 
-			var kernelRun = _computeManager.Enqueue(KernelName.TraceVoxel, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { waitEvent });
+			var kernelRun = _computeManager.Enqueue(KernelName.Trace, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { waitEvent, waitEvent2 });
 			_computeManager.ReleaseRenderbuffer(new[] { kernelRun });
 			_computeManager.Flush();
 		}
+
 		#endregion
+
+		#region //Screen Events
 
 		protected override void OnUnload()
 		{
@@ -290,6 +292,8 @@ namespace SvoTracer.Window
 
 			SwapBuffers();
 		}
+
+		#endregion
 
 		#region //Error
 

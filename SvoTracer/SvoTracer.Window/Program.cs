@@ -33,12 +33,12 @@ namespace SvoTracer.Window
 				treeManager.SaveTree(treeName, treeBuilder.BuildTree(BaseDepth, maxDepth, uint.MaxValue / 64));
 			var tree = treeManager.LoadTree(treeName);
 
-			var input = new TraceInputData()
+			var input = new PrimeTraceData()
 			{
 				Origin = new(-2f, 0.5f, 0.5f),
 				Facing = Matrix3.Identity,
 				FoV = new((float)Math.PI / 4f, (float)Math.PI / 4f),
-				DoF = new(0, 0.169f),
+				DoF = new(0, 0),
 				MaxOpacity = 200,
 				MaxChildRequestId = 6000,
 				ScreenSize = new(100, 100),

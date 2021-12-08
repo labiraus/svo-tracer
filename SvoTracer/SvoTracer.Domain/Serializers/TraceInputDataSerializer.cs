@@ -10,7 +10,7 @@ namespace SvoTracer.Domain.Serializers
 {
 	public static class TraceInputDataSerializer
 	{
-		public static byte[] Serialize(this TraceInputData data)
+		public static byte[] Serialize(this PrimeTraceData data)
 		{
 			var ms = new MemoryStream();
 			var writer = new BinaryWriter(ms);
