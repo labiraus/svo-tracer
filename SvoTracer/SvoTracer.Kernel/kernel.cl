@@ -95,7 +95,7 @@ typedef struct {
   uchar BaseDepth;
   ushort Tick;
   uint MaxChildRequestId;
-} PrimeTraceData;
+} TraceInput;
 
 typedef struct {
   uchar MaxOpacity;
@@ -115,11 +115,6 @@ typedef struct {
 } UpdateInputData;
 
 typedef struct {
-  int2 Coord;
-  int RequestReference;
-} Coordinates;
-
-typedef struct {
   // Position
   float3 Origin;
   // Vector direction
@@ -136,16 +131,21 @@ typedef struct {
   bool DirectionSignZ;
   ushort Tick;
   float ConeDepth;
-} WorkingData;
-
-typedef struct {
-  WorkingData WorkingData;
   // Current chunk
   ulong3 Location;
   // Depth of inviolate memory(Specific to voxels)
   uchar BaseDepth;
   uint MaxChildRequestId;
-} VoxelData;
+  float Weighting;
+} TraceData;
+
+typedef struct {
+  global ushort *bases;
+  global Block *blocks;
+  global Usage *usage;
+  global uint *childRequestId;
+  global ChildRequest *childRequests;
+} Geometry;
 
 // Inline math
 ulong floatToUlong(float x);
@@ -157,26 +157,26 @@ void releaseSemaphor(global int *semaphor);
 float3 normalVector(short pitch, short yaw);
 
 // Tree
-float coneSize(float m, WorkingData data);
-void setConeDepth(VoxelData *_data);
+float coneSize(float m, TraceData data);
+void setConeDepth(TraceData *_data);
 
 // Octree
 uint baseLocation(uchar depth, ulong3 location);
-uchar comparePositions(uchar depth, ulong3 previousLocation, VoxelData *_data);
+uchar comparePositions(uchar depth, ulong3 previousLocation, TraceData data);
 uchar chunkPosition(uchar depth, ulong3 location);
-bool leaving(VoxelData *_data);
-void traverseChunk(uchar depth, VoxelData *_data);
-VoxelData setupVoxelPrimeTrace(int2 coord, PrimeTraceData _input);
-WorkingData setupWorkingData(RayData origin, float3 direction, float fov, PrimeTraceData input);
-VoxelData setupVoxelRequestTrace(RayData origin, float3 direction, float fov, PrimeTraceData input);
-bool traceIntoVolume(VoxelData *_data);
-SurfaceData average(uint address, global Block *blocks, VoxelData *_data);
-RayData traceVoxel(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests,
-                   VoxelData *_data);
+bool leaving(TraceData data);
+void traverseChunk(uchar depth, TraceData *_data);
+TraceData setupInitialTrace(int2 coord, TraceInput input);
+TraceData setupTrace(RayData *origin, float3 direction, float fov, float weighting, TraceInput input);
+bool traceIntoVolume(TraceData *_data);
+SurfaceData average(uint address, global Block *blocks, TraceData data);
+RayData traceVoxel(Geometry geometry, TraceData data);
+void tracRay(Geometry geometry, TraceData data, RayData *_ray);
+void spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input);
 
 // Writing
-RayData resolveBackgroundRayData(WorkingData data);
-RayData resolveRayData(SurfaceData surfaceData, VoxelData *_data);
+RayData resolveBackgroundRayData(TraceData data);
+RayData resolveRayData(SurfaceData surfaceData, TraceData *_data);
 void draw(__write_only image2d_t outputImage, RayData ray, int2 coord);
 
 // Tree Management
@@ -248,7 +248,7 @@ float3 normalVector(short pitch, short yaw) {
 
 // Calculates the cone size at a given depth from FoV and pixel diameter data
 // Largest cone size wins
-float coneSize(float m, WorkingData data) {
+float coneSize(float m, TraceData data) {
   float eye = data.TraceFoV * m;
   if (data.DoF.x == 0)
     return eye;
@@ -261,12 +261,12 @@ float coneSize(float m, WorkingData data) {
 }
 
 // Determine the maximum tree depth for a cone at this location
-void setConeDepth(VoxelData *_data) {
-  float cone = coneSize(fabs(fast_length((float3)(_data->WorkingData.Origin.x - ulongToFloat(_data->Location.x),
-                                                  _data->WorkingData.Origin.y - ulongToFloat(_data->Location.y),
-                                                  _data->WorkingData.Origin.z - ulongToFloat(_data->Location.z)))),
-                        _data->WorkingData);
-  _data->WorkingData.ConeDepth = -half_log2(cone);
+void setConeDepth(TraceData *_data) {
+  float cone =
+      coneSize(fabs(fast_length((float3)(_data->Origin.x - ulongToFloat(_data->Location.x), _data->Origin.y - ulongToFloat(_data->Location.y),
+                                         _data->Origin.z - ulongToFloat(_data->Location.z)))),
+               *_data);
+  _data->ConeDepth = -half_log2(cone);
 }
 
 // Octree
@@ -281,16 +281,16 @@ uint baseLocation(uchar depth, ulong3 location) {
   return output;
 }
 
-uchar comparePositions(uchar depth, ulong3 previousLocation, VoxelData *_data) {
-  uchar newPosition = chunkPosition(depth, _data->Location);
+uchar comparePositions(uchar depth, ulong3 previousLocation, TraceData data) {
+  uchar newPosition = chunkPosition(depth, data.Location);
   uchar previousPosition = chunkPosition(depth, previousLocation);
-  while (((previousPosition & 1) == _data->WorkingData.DirectionSignX && (newPosition & 1) != _data->WorkingData.DirectionSignX) ||
-         (((previousPosition >> 1) & 1) == _data->WorkingData.DirectionSignY && ((newPosition >> 1) & 1) != _data->WorkingData.DirectionSignY) ||
-         (((previousPosition >> 2) & 1) == _data->WorkingData.DirectionSignZ && ((newPosition >> 2) & 1) != _data->WorkingData.DirectionSignZ)) {
+  while (((previousPosition & 1) == data.DirectionSignX && (newPosition & 1) != data.DirectionSignX) ||
+         (((previousPosition >> 1) & 1) == data.DirectionSignY && ((newPosition >> 1) & 1) != data.DirectionSignY) ||
+         (((previousPosition >> 2) & 1) == data.DirectionSignZ && ((newPosition >> 2) & 1) != data.DirectionSignZ)) {
     if (depth == 1)
       break;
     depth--;
-    newPosition = chunkPosition(depth, _data->Location);
+    newPosition = chunkPosition(depth, data.Location);
     previousPosition = chunkPosition(depth, previousLocation);
   }
   return depth;
@@ -301,75 +301,74 @@ uchar chunkPosition(uchar depth, ulong3 location) {
 }
 
 // Determines whether cone is leaving the octree
-bool leaving(VoxelData *_data) {
-  return (!_data->WorkingData.DirectionSignX && _data->Location.x == 0) || (!_data->WorkingData.DirectionSignY && _data->Location.y == 0) ||
-         (!_data->WorkingData.DirectionSignZ && _data->Location.z == 0) || (_data->WorkingData.DirectionSignX && _data->Location.x == ULONG_MAX) ||
-         (_data->WorkingData.DirectionSignY && _data->Location.y == ULONG_MAX) ||
-         (_data->WorkingData.DirectionSignZ && _data->Location.z == ULONG_MAX);
+bool leaving(TraceData data) {
+  return (!data.DirectionSignX && data.Location.x == 0) || (!data.DirectionSignY && data.Location.y == 0) ||
+         (!data.DirectionSignZ && data.Location.z == 0) || (data.DirectionSignX && data.Location.x == ULONG_MAX) ||
+         (data.DirectionSignY && data.Location.y == ULONG_MAX) || (data.DirectionSignZ && data.Location.z == ULONG_MAX);
 }
 
 // Moves to the nearest neighboring chunk along the Direction vector
-void traverseChunk(uchar depth, VoxelData *_data) {
+void traverseChunk(uchar depth, TraceData *_data) {
   // determine distance from current location to x, y, z chunk boundary
-  ulong dx = roundUlong(_data->Location.x, depth, _data->WorkingData.DirectionSignX);
-  ulong dy = roundUlong(_data->Location.y, depth, _data->WorkingData.DirectionSignY);
-  ulong dz = roundUlong(_data->Location.z, depth, _data->WorkingData.DirectionSignZ);
+  ulong dx = roundUlong(_data->Location.x, depth, _data->DirectionSignX);
+  ulong dy = roundUlong(_data->Location.y, depth, _data->DirectionSignY);
+  ulong dz = roundUlong(_data->Location.z, depth, _data->DirectionSignZ);
 
   // calulate the shortest of the three lengths
-  float ax = fabs(dx * _data->WorkingData.InvDirection.x);
-  float ay = fabs(dy * _data->WorkingData.InvDirection.y);
-  float az = fabs(dz * _data->WorkingData.InvDirection.z);
+  float ax = fabs(dx * _data->InvDirection.x);
+  float ay = fabs(dy * _data->InvDirection.y);
+  float az = fabs(dz * _data->InvDirection.z);
 
   if (ax <= ay && ax <= az) {
     float udx = ulongToFloat(dx);
-    dy = floatToUlong(_data->WorkingData.Direction.y * _data->WorkingData.InvDirection.x * udx);
-    dz = floatToUlong(_data->WorkingData.Direction.z * _data->WorkingData.InvDirection.x * udx);
+    dy = floatToUlong(_data->Direction.y * _data->InvDirection.x * udx);
+    dz = floatToUlong(_data->Direction.z * _data->InvDirection.x * udx);
   } else if (ay <= ax && ay <= az) {
     float udy = ulongToFloat(dy);
-    dx = floatToUlong(_data->WorkingData.Direction.x * _data->WorkingData.InvDirection.y * udy);
-    dz = floatToUlong(_data->WorkingData.Direction.z * _data->WorkingData.InvDirection.y * udy);
+    dx = floatToUlong(_data->Direction.x * _data->InvDirection.y * udy);
+    dz = floatToUlong(_data->Direction.z * _data->InvDirection.y * udy);
   } else {
     float udz = ulongToFloat(dz);
-    dx = floatToUlong(_data->WorkingData.Direction.x * _data->WorkingData.InvDirection.z * udz);
-    dy = floatToUlong(_data->WorkingData.Direction.y * _data->WorkingData.InvDirection.z * udz);
+    dx = floatToUlong(_data->Direction.x * _data->InvDirection.z * udz);
+    dy = floatToUlong(_data->Direction.y * _data->InvDirection.z * udz);
   }
 
-  if (_data->WorkingData.DirectionSignX)
+  if (_data->DirectionSignX)
     _data->Location.x += dx;
   else
     _data->Location.x -= dx;
 
-  if (_data->WorkingData.DirectionSignY)
+  if (_data->DirectionSignY)
     _data->Location.y += dy;
   else
     _data->Location.y -= dy;
 
-  if (_data->WorkingData.DirectionSignZ)
+  if (_data->DirectionSignZ)
     _data->Location.z += dz;
   else
     _data->Location.z -= dz;
 
   // if trafersal has overflowed ulong then the octree has been left
-  if (_data->WorkingData.DirectionSignX && _data->Location.x == 0)
+  if (_data->DirectionSignX && _data->Location.x == 0)
     _data->Location.x = ULONG_MAX;
-  else if (!_data->WorkingData.DirectionSignX && _data->Location.x == ULONG_MAX)
+  else if (!_data->DirectionSignX && _data->Location.x == ULONG_MAX)
     _data->Location.x = 0;
 
-  if (_data->WorkingData.DirectionSignY && _data->Location.y == 0)
+  if (_data->DirectionSignY && _data->Location.y == 0)
     _data->Location.y = ULONG_MAX;
-  else if (!_data->WorkingData.DirectionSignY && _data->Location.y == ULONG_MAX)
+  else if (!_data->DirectionSignY && _data->Location.y == ULONG_MAX)
     _data->Location.y = 0;
 
-  if (_data->WorkingData.DirectionSignZ && _data->Location.z == 0)
+  if (_data->DirectionSignZ && _data->Location.z == 0)
     _data->Location.z = ULONG_MAX;
-  else if (!_data->WorkingData.DirectionSignZ && _data->Location.z == ULONG_MAX)
+  else if (!_data->DirectionSignZ && _data->Location.z == ULONG_MAX)
     _data->Location.z = 0;
 
   setConeDepth(_data);
 }
 
-VoxelData setupVoxelPrimeTrace(int2 coord, PrimeTraceData input) {
-  WorkingData workingData;
+TraceData setupInitialTrace(int2 coord, TraceInput input) {
+  TraceData traceData;
   // rotation around the z axis
   float u = input.FoV[0] * native_divide((native_divide((float)input.ScreenSize.x, 2) - (float)coord.x), (float)input.ScreenSize.x);
   // rotation around the y axis
@@ -378,132 +377,63 @@ VoxelData setupVoxelPrimeTrace(int2 coord, PrimeTraceData input) {
   float cosU = native_cos(u);
   float sinV = native_sin(v);
   float cosV = native_cos(v);
-  // input.Facing * RotationMatrixZ(u) * RotationMatrixY(v) * unitVectorX
-
-  // // rot y
-  // float3 matY0;
-  // float3 matY1;
-  // float3 matY2;
-  // matY0.x = cosV;
-  // matY0.y = 0;
-  // matY0.z = 0 - sinV;
-  // matY1.x = 0;
-  // matY1.y = 1;
-  // matY1.z = 0;
-  // matY2.x = sinV;
-  // matY2.y = 0;
-  // matY2.z = cosV;
-
-  // // rot x
-  // float3 matZ0;
-  // float3 matZ1;
-  // float3 matZ2;
-  // matZ0.x = cosU;
-  // matZ0.y = sinU;
-  // matZ0.z = 0;
-  // matZ1.x = 0 - sinU;
-  // matZ1.y = cosU;
-  // matZ1.z = 0;
-  // matZ2.x = 0;
-  // matZ2.y = 0;
-  // matZ2.z = 1;
-
-  // float3 matRot0;
-  // float3 matRot1;
-  // float3 matRot2;
-  // matRot0.x = matZ0.x * matY0.x + matZ0.y * matY1.x + matZ0.z * matY2.x;
-  // matRot0.y = matZ0.x * matY0.y + matZ0.y * matY1.y + matZ0.z * matY2.y;
-  // matRot0.z = matZ0.x * matY0.z + matZ0.y * matY1.z + matZ0.z * matY2.z;
-  // matRot1.x = matZ1.x * matY0.x + matZ1.y * matY1.x + matZ1.z * matY2.x;
-  // matRot1.y = matZ1.x * matY0.y + matZ1.y * matY1.y + matZ1.z * matY2.y;
-  // matRot1.z = matZ1.x * matY0.z + matZ1.y * matY1.z + matZ1.z * matY2.z;
-  // matRot2.x = matZ2.x * matY0.x + matZ2.y * matY1.x + matZ2.z * matY2.x;
-  // matRot2.y = matZ2.x * matY0.y + matZ2.y * matY1.y + matZ2.z * matY2.y;
-  // matRot2.z = matZ2.x * matY0.z + matZ2.y * matY1.z + matZ2.z * matY2.z;
-
-  // float3 matFinal0;
-  // float3 matFinal1;
-  // float3 matFinal2;
-  // matFinal0.x = input.Facing[0] * matRot0.x + input.Facing[3] * matRot1.x + input.Facing[6] * matRot2.x;
-  // matFinal0.y = input.Facing[0] * matRot0.y + input.Facing[3] * matRot1.y + input.Facing[6] * matRot2.y;
-  // matFinal0.z = input.Facing[0] * matRot0.z + input.Facing[3] * matRot1.z + input.Facing[6] * matRot2.z;
-  // matFinal1.x = input.Facing[1] * matRot0.x + input.Facing[4] * matRot1.x + input.Facing[7] * matRot2.x;
-  // matFinal1.y = input.Facing[1] * matRot0.y + input.Facing[4] * matRot1.y + input.Facing[7] * matRot2.y;
-  // matFinal1.z = input.Facing[1] * matRot0.z + input.Facing[4] * matRot1.z + input.Facing[7] * matRot2.z;
-  // matFinal2.x = input.Facing[2] * matRot0.x + input.Facing[5] * matRot1.x + input.Facing[8] * matRot2.x;
-  // matFinal2.y = input.Facing[2] * matRot0.y + input.Facing[5] * matRot1.y + input.Facing[8] * matRot2.y;
-  // matFinal2.z = input.Facing[2] * matRot0.z + input.Facing[5] * matRot1.z + input.Facing[8] * matRot2.z;
-
-  // float x = 1;
-  // float y = 0;
-  // float z = 0;
-
-  // float3 dir = (float3)(matFinal0.x * x + matFinal0.y * y + matFinal0.z * z, matFinal1.x * x + matFinal1.y * y + matFinal1.z * z,
-  //                       matFinal2.x * x + matFinal2.y * y + matFinal2.z * z);
-
   float matRot0x = cosU * cosV;
   float matRot1x = (0 - sinU) * cosV;
   float matRot2x = sinV;
-  workingData.Direction = (float3)(input.Facing[0] * matRot0x + input.Facing[3] * matRot1x + input.Facing[6] * matRot2x,
-                                   input.Facing[1] * matRot0x + input.Facing[4] * matRot1x + input.Facing[7] * matRot2x,
-                                   input.Facing[2] * matRot0x + input.Facing[5] * matRot1x + input.Facing[8] * matRot2x);
-  workingData.InvDirection =
-      (float3)(native_divide(1, workingData.Direction.x), native_divide(1, workingData.Direction.y), native_divide(1, workingData.Direction.z));
-  workingData.DirectionSignX = workingData.Direction.x >= 0;
-  workingData.DirectionSignY = workingData.Direction.y >= 0;
-  workingData.DirectionSignZ = workingData.Direction.z >= 0;
-  workingData.Origin = (float3)(input.Origin[0], input.Origin[1], input.Origin[2]);
-  workingData.Tick = input.Tick;
-  workingData.DoF = (float2)(input.DoF[0], input.DoF[1]);
-  workingData.TraceFoV = native_divide(input.FoV[0], input.ScreenSize.x);
-  VoxelData voxelData;
-  voxelData.MaxChildRequestId = input.MaxChildRequestId;
-  voxelData.WorkingData = workingData;
-  voxelData.BaseDepth = input.BaseDepth;
-  return voxelData;
+
+  traceData.Direction = (float3)(input.Facing[0] * matRot0x + input.Facing[3] * matRot1x + input.Facing[6] * matRot2x,
+                                 input.Facing[1] * matRot0x + input.Facing[4] * matRot1x + input.Facing[7] * matRot2x,
+                                 input.Facing[2] * matRot0x + input.Facing[5] * matRot1x + input.Facing[8] * matRot2x);
+  traceData.InvDirection =
+      (float3)(native_divide(1, traceData.Direction.x), native_divide(1, traceData.Direction.y), native_divide(1, traceData.Direction.z));
+  traceData.DirectionSignX = traceData.Direction.x >= 0;
+  traceData.DirectionSignY = traceData.Direction.y >= 0;
+  traceData.DirectionSignZ = traceData.Direction.z >= 0;
+  traceData.Origin = (float3)(input.Origin[0], input.Origin[1], input.Origin[2]);
+  traceData.Tick = input.Tick;
+  traceData.DoF = (float2)(input.DoF[0], input.DoF[1]);
+  traceData.TraceFoV = native_divide(input.FoV[0], input.ScreenSize.x);
+  traceData.MaxChildRequestId = input.MaxChildRequestId;
+  traceData.BaseDepth = input.BaseDepth;
+  traceData.Weighting = 1;
+  return traceData;
 }
 
-WorkingData setupWorkingData(RayData origin, float3 direction, float fov, PrimeTraceData input) {
-  WorkingData workingData;
-  workingData.Direction = direction;
-  workingData.InvDirection =
-      (float3)(native_divide(1, workingData.Direction.x), native_divide(1, workingData.Direction.y), native_divide(1, workingData.Direction.z));
-  workingData.DirectionSignX = workingData.Direction.x >= 0;
-  workingData.DirectionSignY = workingData.Direction.y >= 0;
-  workingData.DirectionSignZ = workingData.Direction.z >= 0;
-  workingData.Origin = origin.Position;
-  workingData.Tick = input.Tick;
-  workingData.DoF = (float2)(0, 0);
-  workingData.TraceFoV = fov;
-  return workingData;
-}
-
-VoxelData setupVoxelRequestTrace(RayData origin, float3 direction, float fov, PrimeTraceData input) {
-  WorkingData workingData = setupWorkingData(origin, direction, fov, input);
-  VoxelData voxelData;
-  voxelData.MaxChildRequestId = input.MaxChildRequestId;
-  voxelData.WorkingData = workingData;
-  voxelData.BaseDepth = input.BaseDepth;
-  return voxelData;
+TraceData setupTrace(RayData *origin, float3 direction, float fov, float weighting, TraceInput input) {
+  TraceData traceData;
+  traceData.Direction = direction;
+  traceData.InvDirection =
+      (float3)(native_divide(1, traceData.Direction.x), native_divide(1, traceData.Direction.y), native_divide(1, traceData.Direction.z));
+  traceData.DirectionSignX = traceData.Direction.x >= 0;
+  traceData.DirectionSignY = traceData.Direction.y >= 0;
+  traceData.DirectionSignZ = traceData.Direction.z >= 0;
+  traceData.Origin = origin->Position;
+  traceData.Tick = input.Tick;
+  traceData.DoF = (float2)(0, 0);
+  traceData.TraceFoV = fov;
+  traceData.MaxChildRequestId = input.MaxChildRequestId;
+  traceData.BaseDepth = input.BaseDepth;
+  traceData.Weighting = weighting;
+  return traceData;
 }
 
 // Sets chunk and determines whether the ray hits the octree
-bool traceIntoVolume(VoxelData *_data) {
-  bool x0 = _data->WorkingData.Origin.x < 0;
-  bool x1 = _data->WorkingData.Origin.x > 1;
-  bool xp = _data->WorkingData.Direction.x == 0;
-  bool xd = _data->WorkingData.Direction.x >= 0;
-  bool y0 = _data->WorkingData.Origin.y < 0;
-  bool y1 = _data->WorkingData.Origin.y > 1;
-  bool yp = _data->WorkingData.Direction.y == 0;
-  bool yd = _data->WorkingData.Direction.y >= 0;
-  bool z0 = _data->WorkingData.Origin.z < 0;
-  bool z1 = _data->WorkingData.Origin.z > 1;
-  bool zp = _data->WorkingData.Direction.z == 0;
-  bool zd = _data->WorkingData.Direction.z >= 0;
-  float location0 = _data->WorkingData.Origin.x;
-  float location1 = _data->WorkingData.Origin.y;
-  float location2 = _data->WorkingData.Origin.z;
+bool traceIntoVolume(TraceData *_data) {
+  bool x0 = _data->Origin.x < 0;
+  bool x1 = _data->Origin.x > 1;
+  bool xp = _data->Direction.x == 0;
+  bool xd = _data->Direction.x >= 0;
+  bool y0 = _data->Origin.y < 0;
+  bool y1 = _data->Origin.y > 1;
+  bool yp = _data->Direction.y == 0;
+  bool yd = _data->Direction.y >= 0;
+  bool z0 = _data->Origin.z < 0;
+  bool z1 = _data->Origin.z > 1;
+  bool zp = _data->Direction.z == 0;
+  bool zd = _data->Direction.z >= 0;
+  float location0 = _data->Origin.x;
+  float location1 = _data->Origin.y;
+  float location2 = _data->Origin.z;
   float m = 0;
   float mx = 0;
   float my = 0;
@@ -541,391 +471,391 @@ bool traceIntoVolume(VoxelData *_data) {
     break;
   // Adjacent to one of the 6 planes
   case 0b100000: // x0
-    m = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
+    m = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
     location0 = 0;
-    location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-    location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+    location1 = _data->Origin.y + (_data->Direction.y * m);
+    location2 = _data->Origin.z + (_data->Direction.z * m);
     break;
   case 0b010000: // x1
-    m = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
+    m = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
     location0 = 1;
-    location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-    location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+    location1 = _data->Origin.y + (_data->Direction.y * m);
+    location2 = _data->Origin.z + (_data->Direction.z * m);
     break;
   case 0b001000: // y0
-    m = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+    m = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
+    location0 = _data->Origin.x + (_data->Direction.x * m);
     location1 = 0;
-    location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+    location2 = _data->Origin.z + (_data->Direction.z * m);
     break;
   case 0b000100: // y1
-    m = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+    m = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
+    location0 = _data->Origin.x + (_data->Direction.x * m);
     location1 = 1;
-    location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+    location2 = _data->Origin.z + (_data->Direction.z * m);
     break;
   case 0b000010: // z0
-    m = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
-    location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-    location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+    m = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
+    location0 = _data->Origin.x + (_data->Direction.x * m);
+    location1 = _data->Origin.y + (_data->Direction.y * m);
     location2 = 0;
     break;
   case 0b000001: // z1
-    m = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
-    location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-    location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+    m = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
+    location0 = _data->Origin.x + (_data->Direction.x * m);
+    location1 = _data->Origin.y + (_data->Direction.y * m);
     location2 = 1;
     break;
   // The 8 side arcs outside of the box between two of the faces on one axis and
   // near to two faces on the other two axies z face
   case 0b101000: // x0y0
-    mx = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
+    mx = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
     if (mx >= my) {
       m = mx;
       location0 = 0;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 0;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     }
     break;
   case 0b011000: // x1y0
-    mx = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
+    mx = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
     if (mx >= my) {
       m = mx;
       location0 = 1;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 0;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     }
     break;
   case 0b100100: // x0y1
-    mx = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
+    mx = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
     if (mx >= my) {
       m = mx;
       location0 = 0;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 1;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     }
     break;
   case 0b010100: // x1y1
-    mx = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
+    mx = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
     if (mx >= my) {
       m = mx;
       location0 = 1;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 1;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     }
     break;
   // y face
   case 0b100010: // x0z0
-    mx = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    mz = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
+    mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= mz) {
       m = mx;
       location0 = 0;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 0;
     }
     break;
   case 0b010010: // x1z0
-    mx = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    mz = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
+    mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= mz) {
       m = mx;
       location0 = 1;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 0;
     }
     break;
   case 0b100001: // x0z1
-    mx = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    mz = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
+    mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= mz) {
       m = mx;
       location0 = 0;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 1;
     }
     break;
   case 0b010001: // x1z1
-    mx = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    mz = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
+    mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= mz) {
       m = mx;
       location0 = 1;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 1;
     }
     break;
   // x face
   case 0b001010: // y0z0
-    my = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 0;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 0;
     }
     break;
   case 0b000110: // y1z0
-    my = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 1;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 0;
     }
     break;
   case 0b001001: // y0z1
-    my = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 0;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 1;
     }
     break;
   case 0b000101: // y1z1
-    my = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 1;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 1;
     }
     break;
   // The 8 corners
   case 0b101010: // x0y0z0
-    mx = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
       location0 = 0;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 0;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 0;
     }
     break;
   case 0b011010: // x1y0z0
-    mx = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
       location0 = 1;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 0;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 0;
     }
     break;
   case 0b100110: // x0y1z0
-    mx = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
       location0 = 0;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 1;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 0;
     }
     break;
   case 0b010110: // x1y1z0
-    mx = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((0 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
       location0 = 1;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 1;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 0;
     }
     break;
   case 0b101001: // x0y0z1
-    mx = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
       location0 = 0;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 0;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 1;
     }
     break;
   case 0b011001: // x1y0z1
-    mx = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((0 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
       location0 = 1;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 0;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 1;
     }
     break;
   case 0b100101: // x0y1z1
-    mx = fabs((0 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
       location0 = 0;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 1;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 1;
     }
     break;
   case 0b010101: // x1y1z1
-    mx = fabs((1 - _data->WorkingData.Origin.x) * _data->WorkingData.InvDirection.x);
-    my = fabs((1 - _data->WorkingData.Origin.y) * _data->WorkingData.InvDirection.y);
-    mz = fabs((1 - _data->WorkingData.Origin.z) * _data->WorkingData.InvDirection.z);
+    mx = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
+    my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
+    mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
       location0 = 1;
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
       location1 = 1;
-      location2 = _data->WorkingData.Origin.z + (_data->WorkingData.Direction.z * m);
+      location2 = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->WorkingData.Origin.x + (_data->WorkingData.Direction.x * m);
-      location1 = _data->WorkingData.Origin.y + (_data->WorkingData.Direction.y * m);
+      location0 = _data->Origin.x + (_data->Direction.x * m);
+      location1 = _data->Origin.y + (_data->Direction.y * m);
       location2 = 1;
     }
     break;
@@ -935,17 +865,16 @@ bool traceIntoVolume(VoxelData *_data) {
   _data->Location.x = floatToUlong(location0);
   _data->Location.y = floatToUlong(location1);
   _data->Location.z = floatToUlong(location2);
-  float c = coneSize(m, _data->WorkingData);
+  float c = coneSize(m, *_data);
   return !(location0 < -c || location0 > 1 + c || location1 < -c || location1 > 1 + c || location2 < -c || location2 > 1 + c);
 }
 
-SurfaceData average(uint address, global Block *blocks, VoxelData *_data) {
+SurfaceData average(uint address, global Block *blocks, TraceData data) {
   // Average like heck
   return blocks[address].Data;
 }
 
-RayData traceVoxel(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests,
-                   VoxelData *_data) {
+RayData traceVoxel(Geometry geometry, TraceData data) {
   uchar depth = 1;
   uint localAddress;
   ulong3 previousLocation;
@@ -954,99 +883,219 @@ RayData traceVoxel(global ushort *bases, global Block *blocks, global Usage *usa
   uint oldUsageAddress;
   Usage usageVal;
 
-  setConeDepth(_data);
+  setConeDepth(&data);
 
   // block location at each layer of depth
   uint depthHeap[64];
-  depthHeap[_data->BaseDepth + 1] = UINT_MAX;
+  depthHeap[data.BaseDepth + 1] = UINT_MAX;
 
   // iterate over base chunks
   while (true) {
     // check base chunks to see if current location contains geometry and traverse if it doesn't
-    localAddress = powSum(depth - 1) + baseLocation(depth, _data->Location);
-    chunk = bases[localAddress];
-    if (depth <= _data->BaseDepth && (chunk >> (chunkPosition(depth, _data->Location) * 2) & 2) != 2) {
+    localAddress = powSum(depth - 1) + baseLocation(depth, data.Location);
+    chunk = geometry.bases[localAddress];
+    if (depth <= data.BaseDepth && (chunk >> (chunkPosition(depth, data.Location) * 2) & 2) != 2) {
       // current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
-      previousLocation = _data->Location;
-      traverseChunk(depth, _data);
-      if (leaving(_data))
-        return resolveBackgroundRayData(_data->WorkingData);
-      depth = comparePositions(depth, previousLocation, _data);
+      previousLocation = data.Location;
+      traverseChunk(depth, &data);
+      if (leaving(data))
+        return resolveBackgroundRayData(data);
+      depth = comparePositions(depth, previousLocation, data);
     } else {
-      if (depth < _data->BaseDepth) {
+      if (depth < data.BaseDepth) {
         // Still traversing base chunks
         depth++;
       } else {
         // Traversing blocks
-        depth = _data->BaseDepth + 2;
+        depth = data.BaseDepth + 2;
 
         // iterate over blocks
-        while (depth > (_data->BaseDepth + 1)) {
+        while (depth > (data.BaseDepth + 1)) {
           oldUsageAddress = localAddress >> 3;
-          if (depth == _data->BaseDepth + 2)
-            localAddress = baseLocation(depth, _data->Location);
+          if (depth == data.BaseDepth + 2)
+            localAddress = baseLocation(depth, data.Location);
           else
-            localAddress = blocks[depthHeap[depth - 1]].Child + chunkPosition(depth - 1, _data->Location);
+            localAddress = geometry.blocks[depthHeap[depth - 1]].Child + chunkPosition(depth - 1, data.Location);
           depthHeap[depth] = localAddress;
 
           // Minimize updating usage
           if (oldUsageAddress != localAddress >> 3) {
-            usageVal = usage[localAddress >> 3];
-            if (usageVal.Tick < USHRT_MAX - 1 && usageVal.Tick != _data->WorkingData.Tick)
-              usage[localAddress >> 3].Tick = _data->WorkingData.Tick;
+            usageVal = geometry.usage[localAddress >> 3];
+            if (usageVal.Tick < USHRT_MAX - 1 && usageVal.Tick != data.Tick)
+              geometry.usage[localAddress >> 3].Tick = data.Tick;
           }
 
           // Update usage
-          if (usage[localAddress >> 3].Tick < USHRT_MAX - 1)
-            usage[localAddress >> 3].Tick = _data->WorkingData.Tick;
+          if (geometry.usage[localAddress >> 3].Tick < USHRT_MAX - 1)
+            geometry.usage[localAddress >> 3].Tick = data.Tick;
 
-          block = blocks[localAddress];
+          block = geometry.blocks[localAddress];
           // Check if current block chunk contains geometry
-          if (((block.Chunk >> (chunkPosition(depth, _data->Location) * 2)) & 2) != 2) {
+          if (((block.Chunk >> (chunkPosition(depth, data.Location) * 2)) & 2) != 2) {
             // current block chunk has no geometry, move to edge of chunk and go up a level if this is the edge
-            previousLocation = _data->Location;
-            traverseChunk(depth, _data);
-            if (leaving(_data))
-              return resolveBackgroundRayData(_data->WorkingData);
+            previousLocation = data.Location;
+            traverseChunk(depth, &data);
+            if (leaving(data))
+              return resolveBackgroundRayData(data);
 
-            depth = comparePositions(depth, previousLocation, _data);
+            depth = comparePositions(depth, previousLocation, data);
           } else {
             // C value is too diffuse to use
-            if (_data->WorkingData.ConeDepth < (_data->BaseDepth + 2)) {
-              depth = _data->BaseDepth + 2;
-              return resolveRayData(blocks[depthHeap[depth]].Data, _data);
+            if (data.ConeDepth < (data.BaseDepth + 2)) {
+              depth = data.BaseDepth + 2;
+              return resolveRayData(geometry.blocks[depthHeap[depth]].Data, &data);
             }
 
             // ConeDepth value requires me to go up a level
-            else if (_data->WorkingData.ConeDepth < depth) {
+            else if (data.ConeDepth < depth) {
               depth--;
             }
 
             // no child found, resolve colour of this voxel
             else if (block.Child == UINT_MAX) {
-              requestChild(localAddress, depth, childRequestId, childRequests, _data->MaxChildRequestId, _data->WorkingData.Tick, 1, _data->Location);
-              return resolveRayData(block.Data, _data);
+              requestChild(localAddress, depth, geometry.childRequestId, geometry.childRequests, data.MaxChildRequestId, data.Tick, 1,
+                           data.Location);
+              return resolveRayData(block.Data, &data);
             }
 
             // cone depth not met, navigate to child
-            else if (_data->WorkingData.ConeDepth > (depth + 1)) {
+            else if (data.ConeDepth > (depth + 1)) {
               depth++;
             }
 
             else {
-              return resolveRayData(average(localAddress, blocks, _data), _data);
+              return resolveRayData(average(localAddress, geometry.blocks, data), &data);
             }
           }
         }
-        depth = _data->BaseDepth;
+        depth = data.BaseDepth;
       }
+    }
+  }
+}
+
+RayData traceLight(Geometry geometry, TraceData _data, RayData ray) {
+  RayData output;
+  return output;
+}
+
+void tracRay(Geometry geometry, TraceData data, RayData *_ray) { 
+  RayData voxelRay = traceVoxel(geometry, data);
+  RayData lightRay = traceLight(geometry, data, voxelRay);
+}
+
+void spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input) {
+  float fovMultiplier = 0.5f;
+  float fovConstant = 0.5f;
+  float weightingMultiplier = 0.5f;
+  float weightingConstant = 0.5f;
+  if (fovConstant <= 0 || fovMultiplier >= 1 || fovMultiplier <= -1)
+    return;
+  float3 ringSeed;
+  float3 ringVector;
+  float colour = 0;
+  float fov = fovConstant;
+  float oldfov = fov;
+  float weighting = weightingConstant;
+  float ringWeighting = weighting;
+  float spineRotation[12];
+  float ringRotation[12];
+  float spineAngle = 0;
+  float ringAngle;
+
+  float3 spineAxis = normalize(cross(_ray->Direction, _ray->Normal));
+
+  float3 reflection = _ray->Direction - (2 * dot(_ray->Direction, _ray->Normal)) * _ray->Normal;
+  float dotProduct = dot(reflection, _ray->Normal);
+  if (dotProduct < fov)
+    ringWeighting = weighting * dotProduct / fov;
+  tracRay(geometry, setupTrace(_ray, reflection, fov, ringWeighting * baseWeighting, input), _ray);
+
+  while (spineAngle < M_PI_F) {
+    fov = (fovMultiplier * (spineAngle + fov) + fovConstant) / (1 - fovMultiplier);
+    spineAngle = (1 + fovMultiplier) * (spineAngle + oldfov) / (1 - fovMultiplier);
+    oldfov = fov;
+    weighting = spineAngle * weightingMultiplier + weightingConstant;
+    ringWeighting = weighting;
+
+    spineRotation[0] = native_cos(-spineAngle);
+    spineRotation[1] = native_sin(-spineAngle);
+    spineRotation[2] = 1.0f - spineRotation[0];
+    spineRotation[3] = spineRotation[2] * spineAxis.x * spineAxis.x;
+    spineRotation[4] = spineRotation[2] * spineAxis.x * spineAxis.y;
+    spineRotation[5] = spineRotation[2] * spineAxis.x * spineAxis.z;
+    spineRotation[6] = spineRotation[2] * spineAxis.y * spineAxis.y;
+    spineRotation[7] = spineRotation[2] * spineAxis.y * spineAxis.z;
+    spineRotation[8] = spineRotation[2] * spineAxis.z * spineAxis.z;
+    spineRotation[9] = spineRotation[1] * spineAxis.x;
+    spineRotation[10] = spineRotation[1] * spineAxis.y;
+    spineRotation[11] = spineRotation[1] * spineAxis.z;
+
+    ringSeed.x = (spineRotation[3] + spineRotation[0]) * reflection.x + (spineRotation[4] - spineRotation[11]) * reflection.y +
+                 (spineRotation[5] + spineRotation[10]) * reflection.z;
+    ringSeed.y = (spineRotation[4] + spineRotation[11]) * reflection.x + (spineRotation[6] + spineRotation[0]) * reflection.y +
+                 (spineRotation[7] - spineRotation[9]) * reflection.z;
+    ringSeed.z = (spineRotation[5] - spineRotation[10]) * reflection.x + (spineRotation[7] + spineRotation[9]) * reflection.y +
+                 (spineRotation[8] + spineRotation[0]) * reflection.z;
+    ringSeed = normalize(ringSeed);
+
+    dotProduct = dot(ringSeed, _ray->Normal);
+    if (dotProduct < 0)
+      break;
+    // fov dives into surface
+    if (dotProduct < fov)
+      ringWeighting = weighting * dotProduct / fov;
+
+    tracRay(geometry, setupTrace(_ray, ringSeed, fov, ringWeighting * baseWeighting, input), _ray);
+
+    for (int j = 1; j * fov < M_PI_2_F; j++) {
+      ringWeighting = weighting;
+      ringAngle = j * 2 * fov;
+      ringRotation[0] = native_cos(-ringAngle);
+      ringRotation[1] = native_sin(-ringAngle);
+      ringRotation[2] = 1.0f - ringRotation[0];
+      ringRotation[3] = ringRotation[2] * reflection.x * reflection.x;
+      ringRotation[4] = ringRotation[2] * reflection.x * reflection.y;
+      ringRotation[5] = ringRotation[2] * reflection.x * reflection.z;
+      ringRotation[6] = ringRotation[2] * reflection.y * reflection.y;
+      ringRotation[7] = ringRotation[2] * reflection.y * reflection.z;
+      ringRotation[8] = ringRotation[2] * reflection.z * reflection.z;
+      ringRotation[9] = ringRotation[1] * reflection.x;
+      ringRotation[10] = ringRotation[1] * reflection.y;
+      ringRotation[11] = ringRotation[1] * reflection.z;
+
+      ringVector.x = (ringRotation[3] + ringRotation[0]) * ringSeed.x + (ringRotation[4] - ringRotation[11]) * ringSeed.y +
+                     (ringRotation[5] + ringRotation[10]) * ringSeed.z;
+      ringVector.y = (ringRotation[4] + ringRotation[11]) * ringSeed.x + (ringRotation[6] + ringRotation[0]) * ringSeed.y +
+                     (ringRotation[7] - ringRotation[9]) * ringSeed.z;
+      ringVector.z = (ringRotation[5] - ringRotation[10]) * ringSeed.x + (ringRotation[7] + ringRotation[9]) * ringSeed.y +
+                     (ringRotation[8] + ringRotation[0]) * ringSeed.z;
+      ringVector = normalize(ringVector);
+
+      dotProduct = dot(ringVector, _ray->Normal);
+      if (dotProduct < 0)
+        break;
+      if (dotProduct < fov)
+        ringWeighting = weighting * dotProduct / fov;
+
+      tracRay(geometry, setupTrace(_ray, ringVector, fov, ringWeighting * baseWeighting, input), _ray);
+
+      ringVector.x = (ringRotation[3] + ringRotation[0]) * ringSeed.x + (ringRotation[4] + ringRotation[11]) * ringSeed.y +
+                     (ringRotation[5] - ringRotation[10]) * ringSeed.z;
+      ringVector.y = (ringRotation[4] - ringRotation[11]) * ringSeed.x + (ringRotation[6] + ringRotation[0]) * ringSeed.y +
+                     (ringRotation[7] + ringRotation[9]) * ringSeed.z;
+      ringVector.z = (ringRotation[5] + ringRotation[10]) * ringSeed.x + (ringRotation[7] - ringRotation[9]) * ringSeed.y +
+                     (ringRotation[8] + ringRotation[0]) * ringSeed.z;
+      ringVector = normalize(ringVector);
+
+      tracRay(geometry, setupTrace(_ray, ringVector, fov, ringWeighting * baseWeighting, input), _ray);
     }
   }
 }
 
 // Writing
 // Combine _data colour+opacity with background colour and write to output
-RayData resolveBackgroundRayData(WorkingData data) {
+RayData resolveBackgroundRayData(TraceData data) {
   RayData ray;
   ray.Direction = data.Direction;
   ray.Position = data.Origin;
@@ -1058,7 +1107,7 @@ RayData resolveBackgroundRayData(WorkingData data) {
   return ray;
 }
 
-RayData resolveRayData(SurfaceData surfaceData, VoxelData *_data) {
+RayData resolveRayData(SurfaceData surfaceData, TraceData *_data) {
   RayData request;
   request.Normal = normalVector(surfaceData.NormalPitch, surfaceData.NormalYaw);
   request.ColourR = surfaceData.ColourR;
@@ -1067,9 +1116,9 @@ RayData resolveRayData(SurfaceData surfaceData, VoxelData *_data) {
   request.Opacity = surfaceData.Opacity;
   request.Properties = surfaceData.Properties;
   request.Position = (float3)(ulongToFloat(_data->Location.x), ulongToFloat(_data->Location.y), ulongToFloat(_data->Location.x));
-  request.RayLength = length(request.Position - _data->WorkingData.Origin);
-  request.Direction = _data->WorkingData.Direction;
-  request.ConeDepth = _data->WorkingData.ConeDepth;
+  request.RayLength = length(request.Position - _data->Origin);
+  request.Direction = _data->Direction;
+  request.ConeDepth = _data->ConeDepth;
   return request;
 }
 
@@ -1370,29 +1419,29 @@ kernel void graft(global Block *blocks, global Usage *usage, global uint *childR
 }
 
 kernel void trace(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests,
-                  __write_only image2d_t outputImage, PrimeTraceData _input) {
+                  __write_only image2d_t outputImage, TraceInput input) {
   int2 coord = (int2)(get_global_id(0), get_global_id(1));
-  uint requestReference = (_input.ScreenSize.x * coord.y) + coord.x;
-  VoxelData data = setupVoxelPrimeTrace(coord, _input);
-  RayData result;
+  uint requestReference = (input.ScreenSize.x * coord.y) + coord.x;
+  TraceData data = setupInitialTrace(coord, input);
+  TraceData *_data = &data;
+  RayData ray;
 
   if (!traceIntoVolume(&data)) {
-    result = resolveBackgroundRayData(data.WorkingData);
-    draw(outputImage, result, coord);
+    ray = resolveBackgroundRayData(data);
+    draw(outputImage, ray, coord);
     return;
   }
 
-  result = traceVoxel(bases, blocks, usage, childRequestId, childRequests, &data);
+  Geometry geometry;
+  geometry.bases = bases;
+  geometry.blocks = blocks;
+  geometry.usage = usage;
+  geometry.childRequestId = childRequestId;
+  geometry.childRequests = childRequests;
+  ray = traceVoxel(geometry, data);
 
   // trace other meshes
 
-  float3 direction;
-  float fov;
-  if (false) {
-    // spawned rays
-    data = setupVoxelRequestTrace(result, direction, fov, _input);
-    traceVoxel(bases, blocks, usage, childRequestId, childRequests, &data);
-  }
-
-  draw(outputImage, result, coord);
+  spawnRays(geometry, &ray, 1, input);
+  draw(outputImage, ray, coord);
 }
