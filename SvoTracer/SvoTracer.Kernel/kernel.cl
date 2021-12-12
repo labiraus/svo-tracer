@@ -13,6 +13,14 @@ typedef struct {
 } RayData;
 
 typedef struct {
+  float Luminosity;
+  float ColourR;
+  float ColourB;
+  float ColourG;
+  float TotalWeighting;
+} RayAccumulator;
+
+typedef struct {
   short NormalPitch;
   short NormalYaw;
   uchar ColourR;
@@ -167,17 +175,22 @@ uchar chunkPosition(uchar depth, ulong3 location);
 bool leaving(TraceData data);
 void traverseChunk(uchar depth, TraceData *_data);
 TraceData setupInitialTrace(int2 coord, TraceInput input);
-TraceData setupTrace(RayData *origin, float3 direction, float fov, float weighting, TraceInput input);
+TraceData setupTrace(float3 origin, float3 direction, float fov, float weighting, TraceInput input);
 bool traceIntoVolume(TraceData *_data);
 SurfaceData average(uint address, global Block *blocks, TraceData data);
 RayData traceVoxel(Geometry geometry, TraceData data);
-void tracRay(Geometry geometry, TraceData data, RayData *_ray);
-void spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input);
+RayData traceMesh(Geometry geometry, TraceData _data, RayData mask);
+RayData traceParticle(Geometry geometry, TraceData _data, RayData mask);
+RayData traceLight(Geometry geometry, TraceData data, RayData mask);
+RayData traceRay(Geometry geometry, TraceData data);
+void accumulateRay(Geometry geometry, TraceData data, RayAccumulator *_accumulator);
+RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input);
 
 // Writing
 RayData resolveBackgroundRayData(TraceData data);
 RayData resolveRayData(SurfaceData surfaceData, TraceData *_data);
-void draw(__write_only image2d_t outputImage, RayData ray, int2 coord);
+void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accumulator);
+void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumulator, int2 coord);
 
 // Tree Management
 void helpDereference(global Block *blocks, global Usage *usage, global uint *parentSize, global bool *parentResidency, global Parent *parents,
@@ -399,7 +412,7 @@ TraceData setupInitialTrace(int2 coord, TraceInput input) {
   return traceData;
 }
 
-TraceData setupTrace(RayData *origin, float3 direction, float fov, float weighting, TraceInput input) {
+TraceData setupTrace(float3 origin, float3 direction, float fov, float weighting, TraceInput input) {
   TraceData traceData;
   traceData.Direction = direction;
   traceData.InvDirection =
@@ -407,7 +420,7 @@ TraceData setupTrace(RayData *origin, float3 direction, float fov, float weighti
   traceData.DirectionSignX = traceData.Direction.x >= 0;
   traceData.DirectionSignY = traceData.Direction.y >= 0;
   traceData.DirectionSignZ = traceData.Direction.z >= 0;
-  traceData.Origin = origin->Position;
+  traceData.Origin = origin;
   traceData.Tick = input.Tick;
   traceData.DoF = (float2)(0, 0);
   traceData.TraceFoV = fov;
@@ -953,8 +966,7 @@ RayData traceVoxel(Geometry geometry, TraceData data) {
 
             // no child found, resolve colour of this voxel
             else if (block.Child == UINT_MAX) {
-              requestChild(localAddress, depth, geometry.childRequestId, geometry.childRequests, data.MaxChildRequestId, data.Tick, 1,
-                           data.Location);
+              requestChild(localAddress, depth, geometry.childRequestId, geometry.childRequests, data.MaxChildRequestId, data.Tick, 1, data.Location);
               return resolveRayData(block.Data, &data);
             }
 
@@ -974,23 +986,33 @@ RayData traceVoxel(Geometry geometry, TraceData data) {
   }
 }
 
-RayData traceLight(Geometry geometry, TraceData _data, RayData ray) {
-  RayData output;
-  return output;
+RayData traceMesh(Geometry geometry, TraceData _data, RayData mask) { return mask; }
+
+RayData traceParticle(Geometry geometry, TraceData _data, RayData mask) { return mask; }
+
+RayData traceLight(Geometry geometry, TraceData _data, RayData mask) { return mask; }
+
+RayData traceRay(Geometry geometry, TraceData data) {
+  RayData ray = traceVoxel(geometry, data);
+  ray = traceMesh(geometry, data, ray);
+  ray = traceParticle(geometry, data, ray);
+  ray = traceLight(geometry, data, ray);
+  return ray;
 }
 
-void tracRay(Geometry geometry, TraceData data, RayData *_ray) { 
-  RayData voxelRay = traceVoxel(geometry, data);
-  RayData lightRay = traceLight(geometry, data, voxelRay);
+void accumulateRay(Geometry geometry, TraceData data, RayAccumulator *_accumulator) {
+  RayData ray = traceRay(geometry, data);
+  writeToAccumulator(ray, data.Weighting, _accumulator);
 }
 
-void spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input) {
+RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input) {
+  RayAccumulator accumulator = {.TotalWeighting = 0};
   float fovMultiplier = 0.5f;
   float fovConstant = 0.5f;
   float weightingMultiplier = 0.5f;
   float weightingConstant = 0.5f;
   if (fovConstant <= 0 || fovMultiplier >= 1 || fovMultiplier <= -1)
-    return;
+    return accumulator;
   float3 ringSeed;
   float3 ringVector;
   float colour = 0;
@@ -1009,7 +1031,7 @@ void spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput
   float dotProduct = dot(reflection, _ray->Normal);
   if (dotProduct < fov)
     ringWeighting = weighting * dotProduct / fov;
-  tracRay(geometry, setupTrace(_ray, reflection, fov, ringWeighting * baseWeighting, input), _ray);
+  accumulateRay(geometry, setupTrace(_ray->Position, reflection, fov, ringWeighting * baseWeighting, input), &accumulator);
 
   while (spineAngle < M_PI_F) {
     fov = (fovMultiplier * (spineAngle + fov) + fovConstant) / (1 - fovMultiplier);
@@ -1046,7 +1068,7 @@ void spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput
     if (dotProduct < fov)
       ringWeighting = weighting * dotProduct / fov;
 
-    tracRay(geometry, setupTrace(_ray, ringSeed, fov, ringWeighting * baseWeighting, input), _ray);
+    accumulateRay(geometry, setupTrace(_ray->Position, ringSeed, fov, ringWeighting * baseWeighting, input), &accumulator);
 
     for (int j = 1; j * fov < M_PI_2_F; j++) {
       ringWeighting = weighting;
@@ -1078,7 +1100,7 @@ void spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput
       if (dotProduct < fov)
         ringWeighting = weighting * dotProduct / fov;
 
-      tracRay(geometry, setupTrace(_ray, ringVector, fov, ringWeighting * baseWeighting, input), _ray);
+      accumulateRay(geometry, setupTrace(_ray->Position, ringVector, fov, ringWeighting * baseWeighting, input), &accumulator);
 
       ringVector.x = (ringRotation[3] + ringRotation[0]) * ringSeed.x + (ringRotation[4] + ringRotation[11]) * ringSeed.y +
                      (ringRotation[5] - ringRotation[10]) * ringSeed.z;
@@ -1088,9 +1110,10 @@ void spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput
                      (ringRotation[8] + ringRotation[0]) * ringSeed.z;
       ringVector = normalize(ringVector);
 
-      tracRay(geometry, setupTrace(_ray, ringVector, fov, ringWeighting * baseWeighting, input), _ray);
+      accumulateRay(geometry, setupTrace(_ray->Position, ringVector, fov, ringWeighting * baseWeighting, input), &accumulator);
     }
   }
+  return accumulator;
 }
 
 // Writing
@@ -1103,7 +1126,7 @@ RayData resolveBackgroundRayData(TraceData data) {
   ray.ColourR = 0;
   ray.ColourG = 0;
   ray.ColourB = 0;
-  ray.Opacity = 255;
+  ray.Opacity = 0;
   return ray;
 }
 
@@ -1122,7 +1145,9 @@ RayData resolveRayData(SurfaceData surfaceData, TraceData *_data) {
   return request;
 }
 
-void draw(__write_only image2d_t outputImage, RayData ray, int2 coord) {
+void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accumulator) {}
+
+void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumulator, int2 coord) {
   float4 colour = (float4)(0, 0, 0, 1);
   if (ray.Opacity == 0) {
     write_imagef(outputImage, coord, colour);
@@ -1423,25 +1448,21 @@ kernel void trace(global ushort *bases, global Block *blocks, global Usage *usag
   int2 coord = (int2)(get_global_id(0), get_global_id(1));
   uint requestReference = (input.ScreenSize.x * coord.y) + coord.x;
   TraceData data = setupInitialTrace(coord, input);
-  TraceData *_data = &data;
-  RayData ray;
+  RayAccumulator accumulator = {.TotalWeighting = 0};
 
+  // Move ray to bounding volume
   if (!traceIntoVolume(&data)) {
-    ray = resolveBackgroundRayData(data);
-    draw(outputImage, ray, coord);
+    // Bounding volume is missed entirely
+    draw(outputImage, resolveBackgroundRayData(data), accumulator, coord);
     return;
   }
 
-  Geometry geometry;
-  geometry.bases = bases;
-  geometry.blocks = blocks;
-  geometry.usage = usage;
-  geometry.childRequestId = childRequestId;
-  geometry.childRequests = childRequests;
-  ray = traceVoxel(geometry, data);
+  Geometry geometry = {.bases = bases, .blocks = blocks, .usage = usage, .childRequestId = childRequestId, .childRequests = childRequests};
 
-  // trace other meshes
-
-  spawnRays(geometry, &ray, 1, input);
-  draw(outputImage, ray, coord);
+  // Perform initial trace
+  RayData ray = traceRay(geometry, data);
+  // Accumulate light
+  accumulator = spawnRays(geometry, &ray, 1, input);
+  // Apply accumulated light to ray
+  draw(outputImage, ray, accumulator, coord);
 }
