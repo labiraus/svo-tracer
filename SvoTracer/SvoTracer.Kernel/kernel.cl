@@ -6,17 +6,16 @@ typedef struct {
   float3 Normal;
   float Luminosity;
   uchar ColourR;
-  uchar ColourB;
   uchar ColourG;
+  uchar ColourB;
   uchar Opacity;
   ushort Properties;
 } RayData;
 
 typedef struct {
-  float Luminosity;
   float ColourR;
-  float ColourB;
   float ColourG;
+  float ColourB;
   float TotalWeighting;
 } RayAccumulator;
 
@@ -1123,53 +1122,56 @@ RayData resolveBackgroundRayData(TraceData data) {
   ray.Direction = data.Direction;
   ray.Position = data.Origin;
   ray.ConeDepth = data.TraceFoV;
-  ray.ColourR = 0;
-  ray.ColourG = 0;
-  ray.ColourB = 0;
+  float dotprod = dot(data.Direction, (float3)(0, 0, 1));
+  if (dotprod < -0.8) {
+    ray.ColourR = 255;
+    ray.ColourG = 255;
+    ray.ColourB = 255;
+    ray.Luminosity = -dotprod * 150.0f;
+  } else {
+    ray.ColourR = 135;
+    ray.ColourG = 206;
+    ray.ColourB = 235;
+    ray.Luminosity = 10.0f;
+  }
   ray.Opacity = 0;
   return ray;
 }
 
 RayData resolveRayData(SurfaceData surfaceData, TraceData *_data) {
-  RayData request;
-  request.Normal = normalVector(surfaceData.NormalPitch, surfaceData.NormalYaw);
-  request.ColourR = surfaceData.ColourR;
-  request.ColourB = surfaceData.ColourB;
-  request.ColourG = surfaceData.ColourG;
-  request.Opacity = surfaceData.Opacity;
-  request.Properties = surfaceData.Properties;
-  request.Position = (float3)(ulongToFloat(_data->Location.x), ulongToFloat(_data->Location.y), ulongToFloat(_data->Location.x));
-  request.RayLength = length(request.Position - _data->Origin);
-  request.Direction = _data->Direction;
-  request.ConeDepth = _data->ConeDepth;
-  return request;
+  RayData ray;
+  ray.Normal = normalVector(surfaceData.NormalPitch, surfaceData.NormalYaw);
+  ray.ColourR = surfaceData.ColourR;
+  ray.ColourG = surfaceData.ColourG;
+  ray.ColourB = surfaceData.ColourB;
+  ray.Opacity = surfaceData.Opacity;
+  ray.Luminosity = 0;
+  ray.Properties = surfaceData.Properties;
+  ray.Position = (float3)(ulongToFloat(_data->Location.x), ulongToFloat(_data->Location.y), ulongToFloat(_data->Location.x));
+  ray.RayLength = length(ray.Position - _data->Origin);
+  ray.Direction = _data->Direction;
+  ray.ConeDepth = _data->ConeDepth;
+  return ray;
 }
 
-void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accumulator) {}
+void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accumulator) {
+  _accumulator->TotalWeighting += weighting;
+  if (overlay.Luminosity == 0)
+    return;
+  _accumulator->ColourR += overlay.ColourR / 255.0f * weighting * overlay.Luminosity;
+  _accumulator->ColourG += overlay.ColourG / 255.0f * weighting * overlay.Luminosity;
+  _accumulator->ColourB += overlay.ColourB / 255.0f * weighting * overlay.Luminosity;
+}
 
 void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumulator, int2 coord) {
-  float4 colour = (float4)(0, 0, 0, 1);
-  if (ray.Opacity == 0) {
-    write_imagef(outputImage, coord, colour);
-    return;
-  }
-  float3 reflection = ray.Direction - (2 * dot(ray.Direction, ray.Normal) * ray.Normal);
-  // float shade = dot(reflection, (float3)(1, 0, 0)) * 128.0f;
-  float shade = dot(ray.Normal, (float3)(1, 0, 0)) * 128.0f;
-  // _data->ColourR = normal.x;
-  // _data->ColourB = normal.x;
-  // _data->ColourG = normal.x;
-  // reflection += (float3)(1, 1, 1);
-  if (shade > 0) {
-    colour.x = native_divide(ray.ColourR + shade, 510.0f);
-    colour.y = native_divide(ray.ColourB + shade, 510.0f);
-    colour.z = native_divide(ray.ColourG + shade, 510.0f);
-  } else {
-    colour.x = native_divide(ray.ColourR, 510.0f);
-    colour.y = native_divide(ray.ColourB, 510.0f);
-    colour.z = native_divide(ray.ColourG, 510.0f);
-  }
-  write_imagef(outputImage, coord, colour);
+  if (accumulator.TotalWeighting > 0)
+    write_imagef(outputImage, coord,
+                 (float4)(fmin(native_divide(ray.ColourR + (accumulator.ColourR / accumulator.TotalWeighting), 255.0f), 1),
+                          fmin(native_divide(ray.ColourG + (accumulator.ColourG / accumulator.TotalWeighting), 255.0f), 1),
+                          fmin(native_divide(ray.ColourB + (accumulator.ColourB / accumulator.TotalWeighting), 255.0f), 1), 1));
+  else
+    write_imagef(outputImage, coord,
+                 (float4)(native_divide(ray.ColourR, 255.0f), native_divide(ray.ColourG, 255.0f), native_divide(ray.ColourB, 255.0f), 1));
 }
 
 // Tree Management
@@ -1448,7 +1450,7 @@ kernel void trace(global ushort *bases, global Block *blocks, global Usage *usag
   int2 coord = (int2)(get_global_id(0), get_global_id(1));
   uint requestReference = (input.ScreenSize.x * coord.y) + coord.x;
   TraceData data = setupInitialTrace(coord, input);
-  RayAccumulator accumulator = {.TotalWeighting = 0};
+  RayAccumulator accumulator = {.TotalWeighting = 1};
 
   // Move ray to bounding volume
   if (!traceIntoVolume(&data)) {
@@ -1462,7 +1464,8 @@ kernel void trace(global ushort *bases, global Block *blocks, global Usage *usag
   // Perform initial trace
   RayData ray = traceRay(geometry, data);
   // Accumulate light
-  accumulator = spawnRays(geometry, &ray, 1, input);
+  if (ray.Opacity > 0)
+    accumulator = spawnRays(geometry, &ray, 1, input);
   // Apply accumulated light to ray
   draw(outputImage, ray, accumulator, coord);
 }
