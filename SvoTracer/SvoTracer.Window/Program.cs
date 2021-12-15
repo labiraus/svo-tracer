@@ -16,15 +16,28 @@ namespace SvoTracer.Window
 			//new EnqueueTest();
 			byte BaseDepth = 4;
 			byte maxDepth = 9;
-			var treeName = "sphere" + maxDepth;
-			ITreeBuilder treeBuilder = new TreeBuilder(new[] {
-				new SphereDefinition(new Vector3(0.3f, 0.3f, 0.3f), 0.1f),
-				new SphereDefinition(new Vector3(0.7f, 0.7f, 0.7f), 0.1f),
-			});
-			//var treeName = "cube" + maxDepth;
-			//ITreeBuilder treeBuilder = new TreeBuilder(new[] {
-			//	new CubeDefinition(new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0.6f, 0.6f, 0.6f)),
-			//});
+			var shape = Shapes.Spheres;
+
+
+			ITreeBuilder treeBuilder;
+			string treeName;
+			switch (shape)
+			{
+				case Shapes.Cube:
+					treeName = "cube" + maxDepth;
+					treeBuilder = new TreeBuilder(new[] {
+						new CubeDefinition(new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0.6f, 0.6f, 0.6f)),
+					});
+					break;
+				case Shapes.Spheres:
+					treeName = "sphere" + maxDepth;
+					treeBuilder = new TreeBuilder(new[] {
+						new SphereDefinition(new Vector3(0.3f, 0.3f, 0.3f), 0.1f),
+						new SphereDefinition(new Vector3(0.7f, 0.7f, 0.7f), 0.1f),
+					});
+					break;
+				default: return;
+			}
 
 			ITreeManager treeManager = new TreeManager($"{Environment.CurrentDirectory}\\trees");
 			//treeManager.DeleteTree(treeName);
@@ -48,6 +61,11 @@ namespace SvoTracer.Window
 			//new TestRun(tree).Run(input);
 			using MainWindow win = new(1000, 1000, "SVO Tracer", tree, input);
 			win.Run();
+		}
+		enum Shapes
+		{
+			Spheres,
+			Cube
 		}
 	}
 }

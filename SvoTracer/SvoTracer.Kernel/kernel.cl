@@ -1006,10 +1006,10 @@ void accumulateRay(Geometry geometry, TraceData data, RayAccumulator *_accumulat
 
 RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input) {
   RayAccumulator accumulator = {.TotalWeighting = 0};
-  float fovMultiplier = 0.5f;
-  float fovConstant = 0.5f;
-  float weightingMultiplier = 0.5f;
-  float weightingConstant = 0.5f;
+  float fovMultiplier = 0.2f;
+  float fovConstant = 0.2f;
+  float weightingMultiplier = -0.1f;
+  float weightingConstant = 0.8f;
   if (fovConstant <= 0 || fovMultiplier >= 1 || fovMultiplier <= -1)
     return accumulator;
   float3 ringSeed;
@@ -1026,10 +1026,17 @@ RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, 
 
   float3 spineAxis = normalize(cross(_ray->Direction, _ray->Normal));
 
-  float3 reflection = _ray->Direction - (2 * dot(_ray->Direction, _ray->Normal)) * _ray->Normal;
+  float3 reflection = _ray->Direction - (2 * dot(_ray->Direction, _ray->Normal) * _ray->Normal);
   float dotProduct = dot(reflection, _ray->Normal);
   if (dotProduct < fov)
     ringWeighting = weighting * dotProduct / fov;
+  if (dot(_ray->Normal, (float3)(1, 0, 0)) < -0.8) {
+    accumulator.ColourR += 255;
+    accumulator.ColourG += 255;
+    accumulator.ColourB += 255;
+    accumulator.TotalWeighting = 1;
+  }
+  return accumulator;
   accumulateRay(geometry, setupTrace(_ray->Position, reflection, fov, ringWeighting * baseWeighting, input), &accumulator);
 
   while (spineAngle < M_PI_F) {
@@ -1122,12 +1129,12 @@ RayData resolveBackgroundRayData(TraceData data) {
   ray.Direction = data.Direction;
   ray.Position = data.Origin;
   ray.ConeDepth = data.TraceFoV;
-  float dotprod = dot(data.Direction, (float3)(0, 0, 1));
-  if (dotprod < -0.8) {
+  float dotprod = dot(data.Direction, (float3)(0, 0, -1));
+  if (dotprod > 0.8) {
     ray.ColourR = 255;
     ray.ColourG = 255;
     ray.ColourB = 255;
-    ray.Luminosity = -dotprod * 150.0f;
+    ray.Luminosity = dotprod * 150.0f;
   } else {
     ray.ColourR = 135;
     ray.ColourG = 206;
@@ -1158,9 +1165,9 @@ void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accum
   _accumulator->TotalWeighting += weighting;
   if (overlay.Luminosity == 0)
     return;
-  _accumulator->ColourR += overlay.ColourR / 255.0f * weighting * overlay.Luminosity;
-  _accumulator->ColourG += overlay.ColourG / 255.0f * weighting * overlay.Luminosity;
-  _accumulator->ColourB += overlay.ColourB / 255.0f * weighting * overlay.Luminosity;
+  _accumulator->ColourR += (overlay.ColourR / 255.0f) * weighting * overlay.Luminosity;
+  _accumulator->ColourG += (overlay.ColourG / 255.0f) * weighting * overlay.Luminosity;
+  _accumulator->ColourB += (overlay.ColourB / 255.0f) * weighting * overlay.Luminosity;
 }
 
 void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumulator, int2 coord) {
