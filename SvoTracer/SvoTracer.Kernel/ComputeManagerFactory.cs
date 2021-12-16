@@ -32,6 +32,10 @@ namespace SvoTracer.Kernel
 			{
 				throw new Exception("Platform supporting cl_khr_gl_sharing not found");
 			}
+			//platform = platformIds[1];
+			resultCode = CL.GetPlatformInfo(platform, PlatformInfo.Name, out byte[] platformName);
+			ComputeManager.HandleResultCode(resultCode, "CL.GetPlatformInfo:Name");
+			Console.WriteLine(Encoding.ASCII.GetString(platformName));
 
 			resultCode = CL.GetDeviceIDs(platform, DeviceType.Gpu, out CLDevice[] devices);
 			ComputeManager.HandleResultCode(resultCode, "GetDeviceIDs");

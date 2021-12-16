@@ -40,7 +40,7 @@ namespace SvoTracer.Window
 			}
 
 			ITreeManager treeManager = new TreeManager($"{Environment.CurrentDirectory}\\trees");
-			//treeManager.DeleteTree(treeName);
+			treeManager.DeleteTree(treeName);
 
 			if (!treeManager.TreeExists(treeName))
 				treeManager.SaveTree(treeName, treeBuilder.BuildTree(BaseDepth, maxDepth, uint.MaxValue / 64));

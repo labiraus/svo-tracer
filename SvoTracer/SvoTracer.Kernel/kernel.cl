@@ -1030,13 +1030,12 @@ RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, 
   float dotProduct = dot(reflection, _ray->Normal);
   if (dotProduct < fov)
     ringWeighting = weighting * dotProduct / fov;
-  if (dot(_ray->Normal, (float3)(1, 0, 0)) < -0.8) {
-    accumulator.ColourR += 255;
-    accumulator.ColourG += 255;
-    accumulator.ColourB += 255;
-    accumulator.TotalWeighting = 1;
-  }
-  return accumulator;
+  // if (dot(_ray->Normal, (float3)(0, 0, -1)) > 0.8) {
+  //   accumulator.ColourR += 255;
+  //   accumulator.ColourG += 255;
+  //   accumulator.ColourB += 255;
+  //   accumulator.TotalWeighting = 1;
+  // }
   accumulateRay(geometry, setupTrace(_ray->Position, reflection, fov, ringWeighting * baseWeighting, input), &accumulator);
 
   while (spineAngle < M_PI_F) {
