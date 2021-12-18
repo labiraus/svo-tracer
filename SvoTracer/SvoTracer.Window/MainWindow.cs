@@ -31,7 +31,7 @@ namespace SvoTracer.Window
 		#endregion
 
 		#region //Constructor
-		public MainWindow(int width, int height, string title, Octree tree, PrimeTraceData input)
+		public MainWindow(int width, int height, string title, Octree tree, TraceInput input)
 			: base(GameWindowSettings.Default, new NativeWindowSettings()
 			{
 				Title = title,
@@ -237,7 +237,7 @@ namespace SvoTracer.Window
 			var (renderbuffer, waitEvent) = _computeManager.AcquireRenderbuffer();
 			_computeManager.SetArg(KernelName.Trace, "outputImage", renderbuffer);
 			var waitEvent2 = _computeManager.WriteBuffer(BufferName.ChildRequestId, new uint[] { 0 });
-			_computeManager.SetArg(KernelName.Trace, "_input", _stateManager.TraceInput.Serialize());
+			_computeManager.SetArg(KernelName.Trace, "input", _stateManager.TraceInput.Serialize());
 
 			var kernelRun = _computeManager.Enqueue(KernelName.Trace, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { waitEvent, waitEvent2 });
 			_computeManager.ReleaseRenderbuffer(new[] { kernelRun });

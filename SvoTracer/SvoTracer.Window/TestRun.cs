@@ -14,7 +14,7 @@ namespace SvoTracer
 		{
 			_tree = tree;
 		}
-		public void Run(PrimeTraceData input)
+		public void Run(TraceInput input)
 		{
 			try
 			{

@@ -10,7 +10,7 @@ namespace SvoTracer.Window
 	{
 		private const float flySpeed = 0.001f;
 		private const float turnSpeed = 20000.0f;
-		public PrimeTraceData TraceInput;
+		public TraceInput TraceInput;
 		public UpdateInputData UpdateInput = new()
 		{
 			MaxChildRequestId = 6000,
@@ -20,7 +20,7 @@ namespace SvoTracer.Window
 		public Stopwatch timer = new();
 		public ushort Tick { get; set; } = 0;
 
-		public StateManager(PrimeTraceData input)
+		public StateManager(TraceInput input)
 		{
 			TraceInput = input;
 		}
@@ -28,7 +28,7 @@ namespace SvoTracer.Window
 		public void ReadInput(MouseState mouseState, KeyboardState keyboardState)
 		{
 			timer.Stop();
-			float turn = turnSpeed/ timer.ElapsedMilliseconds;
+			float turn = turnSpeed / timer.ElapsedMilliseconds;
 			float fly = timer.ElapsedMilliseconds * flySpeed;
 			if (mouseState.IsButtonDown(MouseButton.Left))
 			{
@@ -70,6 +70,34 @@ namespace SvoTracer.Window
 
 			if (relativeMovement != Vector3.Zero)
 				TraceInput.Origin += Vector3.TransformRow(relativeMovement, TraceInput.Facing);
+
+			if (keyboardState.IsKeyDown(Keys.Z))
+			{
+				if (keyboardState.IsKeyDown(Keys.Up) && TraceInput.FovMultiplier < 1.0f)
+					TraceInput.FovMultiplier += 0.005f;
+				else if (keyboardState.IsKeyDown(Keys.Down) && TraceInput.FovMultiplier > -1.0f)
+					TraceInput.FovMultiplier -= 0.005f;
+
+				if (keyboardState.IsKeyDown(Keys.Left) && TraceInput.FovConstant < 2.0f)
+					TraceInput.FovConstant += 0.005f;
+				else if (keyboardState.IsKeyDown(Keys.Right) && TraceInput.FovConstant > 0f)
+					TraceInput.FovConstant -= 0.005f;
+			}
+
+			if (keyboardState.IsKeyDown(Keys.X))
+			{
+				if (keyboardState.IsKeyDown(Keys.Up) && TraceInput.WeightingMultiplier < 1.0f)
+					TraceInput.WeightingMultiplier += 0.005f;
+				else if (keyboardState.IsKeyDown(Keys.Down) && TraceInput.WeightingMultiplier > -1.0f)
+					TraceInput.WeightingMultiplier -= 0.005f;
+
+				if (keyboardState.IsKeyDown(Keys.Left) && TraceInput.WeightingConstant < 5.0f)
+					TraceInput.WeightingConstant += 0.005f;
+				else if (keyboardState.IsKeyDown(Keys.Right) && TraceInput.WeightingConstant > 0f)
+					TraceInput.WeightingConstant -= 0.005f;
+			}
+
+
 			timer.Reset();
 			timer.Start();
 		}

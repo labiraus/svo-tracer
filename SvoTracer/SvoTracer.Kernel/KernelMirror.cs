@@ -172,15 +172,14 @@ namespace SvoTracer.Kernel
 				_data.Origin.Z - ulongToFloat(_data.Location.Z)).Length), ref _data), 2);
 		}
 
-		static SurfaceData background(ref WorkingData _data)
+		static Block background(ref WorkingData _data)
 		{
-			return new SurfaceData()
+			return new Block()
 			{
 				ColourR = 0,
 				ColourB = 0,
 				ColourG = 0,
 				Opacity = byte.MaxValue,
-				Properties = 0
 			};
 		}
 
@@ -195,7 +194,7 @@ namespace SvoTracer.Kernel
 		/// <param name="block"></param>
 		/// <param name="_data"></param>
 		/// <returns>Whether max opacity has been reached</returns>
-		static bool saveVoxelTrace(SurfaceData blockData, ref WorkingData _data)
+		static bool saveVoxelTrace(Block blockData, ref WorkingData _data)
 		{
 			Vector3 normal = normalVector(blockData.NormalPitch, blockData.NormalYaw);
 			// _data->ColourR = normal.x;
@@ -222,10 +221,10 @@ namespace SvoTracer.Kernel
 			writeData(image, ref _data);
 		}
 
-		static SurfaceData average(uint address, Block[] blocks, ref WorkingData _data)
+		static Block average(uint address, Block[] blocks, ref WorkingData _data)
 		{
 			//Average like heck            
-			return blocks[address].Data;
+			return blocks[address];
 		}
 
 		static void requestChild(uint address, byte depth, ref uint childRequestId,
@@ -891,7 +890,7 @@ namespace SvoTracer.Kernel
 		/// <param name="ANG">Direction faced</param>
 		/// <param name="EYE">Horizonal/vertical FoV angle</param>
 		/// <param name="SCR">Screen size</param>
-		static WorkingData setup(Vector2i coord, ref PrimeTraceData _input)
+		static WorkingData setup(Vector2i coord, ref TraceInput _input)
 		{
 			WorkingData data = new();
 			data.Coord = new Vector2i(coord[0], coord[1]);
@@ -1091,7 +1090,7 @@ namespace SvoTracer.Kernel
 							bool[] parentResidency, Parent[] parents,
 							uint2[] dereferenceQueue,
 							ref int dereferenceRemaining, ref int semaphor,
-							Pruning[] pruning, SurfaceData[] pruningBlockData,
+							Pruning[] pruning, Block[] pruningBlockData,
 							ulong[] pruningAddresses, UpdateInputData inputData)
 		{
 			uint x = get_global_id(0);
@@ -1162,7 +1161,7 @@ namespace SvoTracer.Kernel
 			// UpdateChunk
 			if ((byte)(myPruning.Properties >> 3 & 1) == 1)
 			{
-				blocks[address].Data = pruningBlockData[x];
+				blocks[address]= pruningBlockData[x];
 				blocks[address].Chunk = myPruning.Chunk;
 			}
 		}
@@ -1291,7 +1290,7 @@ namespace SvoTracer.Kernel
 						 Usage[] usage, ref uint childRequestId,
 						 ChildRequest[] childRequests,
 						 string outputImage,
-						 PrimeTraceData _input)
+						 TraceInput _input)
 		{
 			byte depth = 1;
 			uint localAddress;
@@ -1369,7 +1368,7 @@ namespace SvoTracer.Kernel
 								if (_data.ConeDepth < (_data.BaseDepth + 2))
 								{
 									depth = (byte)(_data.BaseDepth + 2);
-									if (saveVoxelTrace(blocks[depthHeap[depth]].Data, ref _data))
+									if (saveVoxelTrace(blocks[depthHeap[depth]], ref _data))
 									{
 										writeData(outputImage, ref _data);
 										return;
@@ -1386,7 +1385,7 @@ namespace SvoTracer.Kernel
 									requestChild(localAddress, depth, ref childRequestId,
 												 childRequests, _data.MaxChildRequestId,
 												 _data.Tick, 1, _data.Location);
-									if (saveVoxelTrace(blocks[localAddress].Data, ref _data))
+									if (saveVoxelTrace(blocks[localAddress], ref _data))
 									{
 										writeData(outputImage, ref _data);
 										return;
@@ -1412,16 +1411,6 @@ namespace SvoTracer.Kernel
 					}
 				}
 			}
-		}
-
-		/// <summary>
-		/// Needs skybox and somewhere to set colour
-		/// </summary>
-		/// <param name="_tree"></param>
-		/// <param name="data"></param>
-		/// <param name="address"></param>
-		public static void SpawnRays()
-		{
 		}
 	}
 }

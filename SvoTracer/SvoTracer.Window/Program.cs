@@ -15,7 +15,7 @@ namespace SvoTracer.Window
 		{
 			//new EnqueueTest();
 			byte BaseDepth = 4;
-			byte maxDepth = 9;
+			byte maxDepth = 11;
 			var shape = Shapes.Spheres;
 
 
@@ -40,22 +40,28 @@ namespace SvoTracer.Window
 			}
 
 			ITreeManager treeManager = new TreeManager($"{Environment.CurrentDirectory}\\trees");
-			treeManager.DeleteTree(treeName);
+			//treeManager.DeleteTree(treeName);
 
 			if (!treeManager.TreeExists(treeName))
 				treeManager.SaveTree(treeName, treeBuilder.BuildTree(BaseDepth, maxDepth, uint.MaxValue / 64));
 			var tree = treeManager.LoadTree(treeName);
 
-			var input = new PrimeTraceData()
+			var input = new TraceInput()
 			{
-				Origin = new(-2f, 0.5f, 0.5f),
-				Facing = Matrix3.Identity,
+				//Origin = new(-2f, 0.5f, 0.5f),
+				//Facing = Matrix3.Identity,
+				Origin = new(0.6223052f, 0.67926204f, 0.6145233f),
+				Facing = new(0.96893793f, 0.24715249f, 0.008649882f, -0.24716175f, 0.96897423f, 0.0f, -0.008381513f, -0.00213792f, 0.99996257f),
 				FoV = new((float)Math.PI / 4f, (float)Math.PI / 4f),
 				DoF = new(0, 0),
 				MaxOpacity = 200,
 				MaxChildRequestId = 6000,
 				ScreenSize = new(100, 100),
 				BaseDepth = tree.BaseDepth,
+				FovMultiplier = 0.1f,
+				FovConstant = 0.1f,
+				WeightingMultiplier = -0.05f,
+				WeightingConstant = 0.5f
 			};
 
 			//new TestRun(tree).Run(input);

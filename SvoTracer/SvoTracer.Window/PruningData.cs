@@ -10,10 +10,10 @@ namespace SvoTracer.Window
 	public class PruningData
 	{
 		public Pruning[] Pruning { get; }
-		public SurfaceData[] PruningBlockData { get; }
+		public Block[] PruningBlockData { get; }
 		public Location[] PruningAddresses { get; }
 
-		public PruningData(Pruning[] pruning, SurfaceData[] pruningBlockData, Location[] pruningAddresses)
+		public PruningData(Pruning[] pruning, Block[] pruningBlockData, Location[] pruningAddresses)
 		{
 			Pruning = pruning;
 			PruningBlockData = pruningBlockData;

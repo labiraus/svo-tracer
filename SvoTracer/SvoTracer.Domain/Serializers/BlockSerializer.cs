@@ -1,10 +1,6 @@
 ﻿using SvoTracer.Domain.Models;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace SvoTracer.Domain.Serializers
 {
@@ -23,21 +19,43 @@ namespace SvoTracer.Domain.Serializers
 		{
 			writer.Write(block.Child);
 			writer.Write(block.Chunk);
-			block.Data.Serialize(writer);
+			writer.Write(block.NormalPitch);
+			writer.Write(block.NormalYaw);
+			writer.Write(block.ColourR);
+			writer.Write(block.ColourG);
+			writer.Write(block.ColourB);
+			writer.Write(block.Opacity);
+			writer.Write(block.Specularity);
+			writer.Write(block.Gloss);
 		}
 
 		public static Block Deserialize(BinaryReader reader) => new()
 		{
 			Child = reader.ReadUInt32(),
 			Chunk = reader.ReadUInt16(),
-			Data = BlockDataSerializer.Deserialize(reader)
+			NormalPitch = reader.ReadInt16(),
+			NormalYaw = reader.ReadInt16(),
+			ColourR = reader.ReadByte(),
+			ColourG = reader.ReadByte(),
+			ColourB = reader.ReadByte(),
+			Opacity = reader.ReadByte(),
+			Specularity = reader.ReadByte(),
+			Gloss = reader.ReadByte(),
+
 		};
 
 		public static Block Deserialize(byte[] data) => new()
 		{
 			Child = BitConverter.ToUInt32(data, 0),
 			Chunk = BitConverter.ToUInt16(data, 4),
-			Data = BlockDataSerializer.Deserialize(data[(Block.Size - SurfaceData.Size)..Block.Size])
+			NormalPitch = BitConverter.ToInt16(data, 6),
+			NormalYaw = BitConverter.ToInt16(data, 8),
+			ColourR = data[10],
+			ColourG = data[11],
+			ColourB = data[12],
+			Opacity = data[13],
+			Specularity = data[14],
+			Gloss = data[15],
 		};
 	}
 }

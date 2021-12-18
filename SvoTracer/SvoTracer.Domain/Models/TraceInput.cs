@@ -4,9 +4,9 @@ using OpenTK.Mathematics;
 
 namespace SvoTracer.Domain.Models
 {
-	public struct PrimeTraceData
+	public struct TraceInput
 	{
-		public PrimeTraceData(
+		public TraceInput(
 			Vector3 origin,
 			Matrix3 facing,
 			Vector2 foV,
@@ -16,7 +16,11 @@ namespace SvoTracer.Domain.Models
 			byte maxOpacity,
 			byte baseDepth,
 			ushort tick,
-			uint maxChildRequestId)
+			uint maxChildRequestId,
+			float fovMultiplier,
+			float fovConstant,
+			float weightingMultiplier,
+			float weightingConstant)
 		{
 			Origin = origin;
 			Facing = facing;
@@ -27,6 +31,10 @@ namespace SvoTracer.Domain.Models
 			BaseDepth = baseDepth;
 			Tick = tick;
 			MaxChildRequestId = maxChildRequestId;
+			FovMultiplier = fovMultiplier;
+			FovConstant = fovConstant;
+			WeightingMultiplier = weightingMultiplier;
+			WeightingConstant = weightingConstant;
 		}
 
 		//Position
@@ -44,5 +52,9 @@ namespace SvoTracer.Domain.Models
 		public byte BaseDepth;
 		public ushort Tick;
 		public uint MaxChildRequestId;
+		public float FovMultiplier;
+		public float FovConstant;
+		public float WeightingMultiplier;
+		public float WeightingConstant;
 	}
 }

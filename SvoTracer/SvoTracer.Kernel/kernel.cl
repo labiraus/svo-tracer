@@ -9,7 +9,8 @@ typedef struct {
   uchar ColourG;
   uchar ColourB;
   uchar Opacity;
-  ushort Properties;
+  uchar Specularity;
+  uchar Gloss;
 } RayData;
 
 typedef struct {
@@ -20,31 +21,17 @@ typedef struct {
 } RayAccumulator;
 
 typedef struct {
+  uint Child;
+  ushort Chunk;
   short NormalPitch;
   short NormalYaw;
   uchar ColourR;
-  uchar ColourB;
   uchar ColourG;
-  uchar Opacity;
-  ushort Properties;
-} SurfaceData;
-
-typedef struct {
-  uint Child;
-  ushort Chunk;
-  SurfaceData Data;
-} Block;
-
-typedef struct {
-  uchar ColourR;
   uchar ColourB;
-  uchar ColourG;
   uchar Opacity;
   uchar Specularity;
   uchar Gloss;
-  uchar Dielectricity;
-  uchar Refractivity;
-} Colour;
+} Block;
 
 typedef struct {
   ushort Tick;
@@ -102,6 +89,10 @@ typedef struct {
   uchar BaseDepth;
   ushort Tick;
   uint MaxChildRequestId;
+  float FovMultiplier;
+  float FovConstant;
+  float WeightingMultiplier;
+  float WeightingConstant;
 } TraceInput;
 
 typedef struct {
@@ -176,18 +167,18 @@ void traverseChunk(uchar depth, TraceData *_data);
 TraceData setupInitialTrace(int2 coord, TraceInput input);
 TraceData setupTrace(float3 origin, float3 direction, float fov, float weighting, TraceInput input);
 bool traceIntoVolume(TraceData *_data);
-SurfaceData average(uint address, global Block *blocks, TraceData data);
+Block average(uint address, global Block *blocks, TraceData data);
 RayData traceVoxel(Geometry geometry, TraceData data);
 RayData traceMesh(Geometry geometry, TraceData _data, RayData mask);
 RayData traceParticle(Geometry geometry, TraceData _data, RayData mask);
 RayData traceLight(Geometry geometry, TraceData data, RayData mask);
 RayData traceRay(Geometry geometry, TraceData data);
 void accumulateRay(Geometry geometry, TraceData data, RayAccumulator *_accumulator);
-RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input);
+void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, float baseWeighting, TraceInput input);
 
 // Writing
 RayData resolveBackgroundRayData(TraceData data);
-RayData resolveRayData(SurfaceData surfaceData, TraceData *_data);
+RayData resolveRayData(Block surfaceData, TraceData *_data);
 void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accumulator);
 void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumulator, int2 coord);
 
@@ -382,9 +373,9 @@ void traverseChunk(uchar depth, TraceData *_data) {
 TraceData setupInitialTrace(int2 coord, TraceInput input) {
   TraceData traceData;
   // rotation around the z axis
-  float u = input.FoV[0] * native_divide((native_divide((float)input.ScreenSize.x, 2) - (float)coord.x), (float)input.ScreenSize.x);
+  float u = input.FoV[0] * native_divide(native_divide((float)input.ScreenSize.x, 2) - (float)coord.x, (float)input.ScreenSize.x);
   // rotation around the y axis
-  float v = input.FoV[1] * native_divide((native_divide((float)input.ScreenSize.y, 2) - (float)coord.y), (float)input.ScreenSize.y);
+  float v = input.FoV[1] * native_divide(native_divide((float)input.ScreenSize.y, 2) - (float)coord.y, (float)input.ScreenSize.y);
   float sinU = native_sin(u);
   float cosU = native_cos(u);
   float sinV = native_sin(v);
@@ -412,20 +403,22 @@ TraceData setupInitialTrace(int2 coord, TraceInput input) {
 }
 
 TraceData setupTrace(float3 origin, float3 direction, float fov, float weighting, TraceInput input) {
-  TraceData traceData;
-  traceData.Direction = direction;
-  traceData.InvDirection =
-      (float3)(native_divide(1, traceData.Direction.x), native_divide(1, traceData.Direction.y), native_divide(1, traceData.Direction.z));
-  traceData.DirectionSignX = traceData.Direction.x >= 0;
-  traceData.DirectionSignY = traceData.Direction.y >= 0;
-  traceData.DirectionSignZ = traceData.Direction.z >= 0;
-  traceData.Origin = origin;
-  traceData.Tick = input.Tick;
-  traceData.DoF = (float2)(0, 0);
-  traceData.TraceFoV = fov;
-  traceData.MaxChildRequestId = input.MaxChildRequestId;
-  traceData.BaseDepth = input.BaseDepth;
-  traceData.Weighting = weighting;
+  TraceData traceData = {
+    .Origin = origin,
+    .Direction = direction,
+    .InvDirection = (float3)(native_divide(1, direction.x), native_divide(1, direction.y), native_divide(1, direction.z)),
+    .DirectionSignX = direction.x >= 0,
+    .DirectionSignY = direction.y >= 0,
+    .DirectionSignZ = direction.z >= 0,
+    .DoF = (float2)(0, 0),
+    .TraceFoV = fov,
+    .Tick = input.Tick,
+    .ConeDepth = 0,
+    .Location = (ulong3)(floatToUlong(origin.x), floatToUlong(origin.y), floatToUlong(origin.z)),
+    .BaseDepth = input.BaseDepth,
+    .MaxChildRequestId = input.MaxChildRequestId,
+    .Weighting = weighting,
+  };
   return traceData;
 }
 
@@ -443,18 +436,18 @@ bool traceIntoVolume(TraceData *_data) {
   bool z1 = _data->Origin.z > 1;
   bool zp = _data->Direction.z == 0;
   bool zd = _data->Direction.z >= 0;
-  float location0 = _data->Origin.x;
-  float location1 = _data->Origin.y;
-  float location2 = _data->Origin.z;
+  float locationX = _data->Origin.x;
+  float locationY = _data->Origin.y;
+  float locationZ = _data->Origin.z;
   float m = 0;
   float mx = 0;
   float my = 0;
   float mz = 0;
   int xyz = (x0 ? 0b100000 : 0) + (x1 ? 0b010000 : 0) + (y0 ? 0b001000 : 0) + (y1 ? 0b000100 : 0) + (z0 ? 0b000010 : 0) + (z1 ? 0b000001 : 0);
   if (xyz == 0) {
-    _data->Location.x = floatToUlong(location0);
-    _data->Location.y = floatToUlong(location1);
-    _data->Location.z = floatToUlong(location2);
+    _data->Location.x = floatToUlong(locationX);
+    _data->Location.y = floatToUlong(locationY);
+    _data->Location.z = floatToUlong(locationZ);
     return true;
   }
   // DIR is parallel to one axis and outside of that axis's box walls
@@ -484,39 +477,39 @@ bool traceIntoVolume(TraceData *_data) {
   // Adjacent to one of the 6 planes
   case 0b100000: // x0
     m = fabs((0 - _data->Origin.x) * _data->InvDirection.x);
-    location0 = 0;
-    location1 = _data->Origin.y + (_data->Direction.y * m);
-    location2 = _data->Origin.z + (_data->Direction.z * m);
+    locationX = 0;
+    locationY = _data->Origin.y + (_data->Direction.y * m);
+    locationZ = _data->Origin.z + (_data->Direction.z * m);
     break;
   case 0b010000: // x1
     m = fabs((1 - _data->Origin.x) * _data->InvDirection.x);
-    location0 = 1;
-    location1 = _data->Origin.y + (_data->Direction.y * m);
-    location2 = _data->Origin.z + (_data->Direction.z * m);
+    locationX = 1;
+    locationY = _data->Origin.y + (_data->Direction.y * m);
+    locationZ = _data->Origin.z + (_data->Direction.z * m);
     break;
   case 0b001000: // y0
     m = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
-    location0 = _data->Origin.x + (_data->Direction.x * m);
-    location1 = 0;
-    location2 = _data->Origin.z + (_data->Direction.z * m);
+    locationX = _data->Origin.x + (_data->Direction.x * m);
+    locationY = 0;
+    locationZ = _data->Origin.z + (_data->Direction.z * m);
     break;
   case 0b000100: // y1
     m = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
-    location0 = _data->Origin.x + (_data->Direction.x * m);
-    location1 = 1;
-    location2 = _data->Origin.z + (_data->Direction.z * m);
+    locationX = _data->Origin.x + (_data->Direction.x * m);
+    locationY = 1;
+    locationZ = _data->Origin.z + (_data->Direction.z * m);
     break;
   case 0b000010: // z0
     m = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
-    location0 = _data->Origin.x + (_data->Direction.x * m);
-    location1 = _data->Origin.y + (_data->Direction.y * m);
-    location2 = 0;
+    locationX = _data->Origin.x + (_data->Direction.x * m);
+    locationY = _data->Origin.y + (_data->Direction.y * m);
+    locationZ = 0;
     break;
   case 0b000001: // z1
     m = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
-    location0 = _data->Origin.x + (_data->Direction.x * m);
-    location1 = _data->Origin.y + (_data->Direction.y * m);
-    location2 = 1;
+    locationX = _data->Origin.x + (_data->Direction.x * m);
+    locationY = _data->Origin.y + (_data->Direction.y * m);
+    locationZ = 1;
     break;
   // The 8 side arcs outside of the box between two of the faces on one axis and
   // near to two faces on the other two axies z face
@@ -525,14 +518,14 @@ bool traceIntoVolume(TraceData *_data) {
     my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
     if (mx >= my) {
       m = mx;
-      location0 = 0;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 0;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 0;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 0;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     }
     break;
   case 0b011000: // x1y0
@@ -540,14 +533,14 @@ bool traceIntoVolume(TraceData *_data) {
     my = fabs((0 - _data->Origin.y) * _data->InvDirection.y);
     if (mx >= my) {
       m = mx;
-      location0 = 1;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 1;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 0;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 0;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     }
     break;
   case 0b100100: // x0y1
@@ -555,14 +548,14 @@ bool traceIntoVolume(TraceData *_data) {
     my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
     if (mx >= my) {
       m = mx;
-      location0 = 0;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 0;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 1;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 1;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     }
     break;
   case 0b010100: // x1y1
@@ -570,14 +563,14 @@ bool traceIntoVolume(TraceData *_data) {
     my = fabs((1 - _data->Origin.y) * _data->InvDirection.y);
     if (mx >= my) {
       m = mx;
-      location0 = 1;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 1;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 1;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 1;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     }
     break;
   // y face
@@ -586,14 +579,14 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= mz) {
       m = mx;
-      location0 = 0;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 0;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 0;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 0;
     }
     break;
   case 0b010010: // x1z0
@@ -601,14 +594,14 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= mz) {
       m = mx;
-      location0 = 1;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 1;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 0;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 0;
     }
     break;
   case 0b100001: // x0z1
@@ -616,14 +609,14 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= mz) {
       m = mx;
-      location0 = 0;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 0;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 1;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 1;
     }
     break;
   case 0b010001: // x1z1
@@ -631,14 +624,14 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= mz) {
       m = mx;
-      location0 = 1;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 1;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 1;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 1;
     }
     break;
   // x face
@@ -647,14 +640,14 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 0;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 0;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 0;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 0;
     }
     break;
   case 0b000110: // y1z0
@@ -662,14 +655,14 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 1;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 1;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 0;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 0;
     }
     break;
   case 0b001001: // y0z1
@@ -677,14 +670,14 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 0;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 0;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 1;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 1;
     }
     break;
   case 0b000101: // y1z1
@@ -692,14 +685,14 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 1;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 1;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 1;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 1;
     }
     break;
   // The 8 corners
@@ -709,19 +702,19 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
-      location0 = 0;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 0;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 0;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 0;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 0;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 0;
     }
     break;
   case 0b011010: // x1y0z0
@@ -730,19 +723,19 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
-      location0 = 1;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 1;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 0;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 0;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 0;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 0;
     }
     break;
   case 0b100110: // x0y1z0
@@ -751,19 +744,19 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
-      location0 = 0;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 0;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 1;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 1;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 0;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 0;
     }
     break;
   case 0b010110: // x1y1z0
@@ -772,19 +765,19 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((0 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
-      location0 = 1;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 1;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 1;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 1;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 0;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 0;
     }
     break;
   case 0b101001: // x0y0z1
@@ -793,19 +786,19 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
-      location0 = 0;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 0;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 0;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 0;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 1;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 1;
     }
     break;
   case 0b011001: // x1y0z1
@@ -814,19 +807,19 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
-      location0 = 1;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 1;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 0;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 0;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 1;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 1;
     }
     break;
   case 0b100101: // x0y1z1
@@ -835,19 +828,19 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
-      location0 = 0;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 0;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 1;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 1;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 1;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 1;
     }
     break;
   case 0b010101: // x1y1z1
@@ -856,34 +849,34 @@ bool traceIntoVolume(TraceData *_data) {
     mz = fabs((1 - _data->Origin.z) * _data->InvDirection.z);
     if (mx >= my & mx >= mz) {
       m = mx;
-      location0 = 1;
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = 1;
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else if (my >= mx & my >= mz) {
       m = my;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = 1;
-      location2 = _data->Origin.z + (_data->Direction.z * m);
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = 1;
+      locationZ = _data->Origin.z + (_data->Direction.z * m);
     } else {
       m = mz;
-      location0 = _data->Origin.x + (_data->Direction.x * m);
-      location1 = _data->Origin.y + (_data->Direction.y * m);
-      location2 = 1;
+      locationX = _data->Origin.x + (_data->Direction.x * m);
+      locationY = _data->Origin.y + (_data->Direction.y * m);
+      locationZ = 1;
     }
     break;
   default:
     return false;
   }
-  _data->Location.x = floatToUlong(location0);
-  _data->Location.y = floatToUlong(location1);
-  _data->Location.z = floatToUlong(location2);
+  _data->Location.x = floatToUlong(locationX);
+  _data->Location.y = floatToUlong(locationY);
+  _data->Location.z = floatToUlong(locationZ);
   float c = coneSize(m, *_data);
-  return !(location0 < -c || location0 > 1 + c || location1 < -c || location1 > 1 + c || location2 < -c || location2 > 1 + c);
+  return !(locationX < -c || locationX > 1 + c || locationY < -c || locationY > 1 + c || locationZ < -c || locationZ > 1 + c);
 }
 
-SurfaceData average(uint address, global Block *blocks, TraceData data) {
+Block average(uint address, global Block *blocks, TraceData data) {
   // Average like heck
-  return blocks[address].Data;
+  return blocks[address];
 }
 
 RayData traceVoxel(Geometry geometry, TraceData data) {
@@ -955,7 +948,7 @@ RayData traceVoxel(Geometry geometry, TraceData data) {
             // C value is too diffuse to use
             if (data.ConeDepth < (data.BaseDepth + 2)) {
               depth = data.BaseDepth + 2;
-              return resolveRayData(geometry.blocks[depthHeap[depth]].Data, &data);
+              return resolveRayData(geometry.blocks[depthHeap[depth]], &data);
             }
 
             // ConeDepth value requires me to go up a level
@@ -966,7 +959,7 @@ RayData traceVoxel(Geometry geometry, TraceData data) {
             // no child found, resolve colour of this voxel
             else if (block.Child == UINT_MAX) {
               requestChild(localAddress, depth, geometry.childRequestId, geometry.childRequests, data.MaxChildRequestId, data.Tick, 1, data.Location);
-              return resolveRayData(block.Data, &data);
+              return resolveRayData(block, &data);
             }
 
             // cone depth not met, navigate to child
@@ -993,9 +986,9 @@ RayData traceLight(Geometry geometry, TraceData _data, RayData mask) { return ma
 
 RayData traceRay(Geometry geometry, TraceData data) {
   RayData ray = traceVoxel(geometry, data);
-  ray = traceMesh(geometry, data, ray);
-  ray = traceParticle(geometry, data, ray);
-  ray = traceLight(geometry, data, ray);
+  //ray = traceMesh(geometry, data, ray);
+  //ray = traceParticle(geometry, data, ray);
+  //ray = traceLight(geometry, data, ray);
   return ray;
 }
 
@@ -1004,20 +997,12 @@ void accumulateRay(Geometry geometry, TraceData data, RayAccumulator *_accumulat
   writeToAccumulator(ray, data.Weighting, _accumulator);
 }
 
-RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, TraceInput input) {
-  RayAccumulator accumulator = {.TotalWeighting = 0};
-  float fovMultiplier = 0.2f;
-  float fovConstant = 0.2f;
-  float weightingMultiplier = -0.1f;
-  float weightingConstant = 0.8f;
-  if (fovConstant <= 0 || fovMultiplier >= 1 || fovMultiplier <= -1)
-    return accumulator;
+void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, float baseWeighting, TraceInput input) {
   float3 ringSeed;
   float3 ringVector;
-  float colour = 0;
-  float fov = fovConstant;
+  float fov = input.FovConstant;
   float oldfov = fov;
-  float weighting = weightingConstant;
+  float weighting = input.WeightingConstant;
   float ringWeighting = weighting;
   float spineRotation[12];
   float ringRotation[12];
@@ -1030,19 +1015,15 @@ RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, 
   float dotProduct = dot(reflection, _ray->Normal);
   if (dotProduct < fov)
     ringWeighting = weighting * dotProduct / fov;
-  // if (dot(_ray->Normal, (float3)(0, 0, -1)) > 0.8) {
-  //   accumulator.ColourR += 255;
-  //   accumulator.ColourG += 255;
-  //   accumulator.ColourB += 255;
-  //   accumulator.TotalWeighting = 1;
-  // }
-  accumulateRay(geometry, setupTrace(_ray->Position, reflection, fov, ringWeighting * baseWeighting, input), &accumulator);
+
+  accumulateRay(geometry, setupTrace(_ray->Position, reflection, fov, ringWeighting * baseWeighting, input), _accumulator);
+  return;
 
   while (spineAngle < M_PI_F) {
-    fov = (fovMultiplier * (spineAngle + fov) + fovConstant) / (1 - fovMultiplier);
-    spineAngle = (1 + fovMultiplier) * (spineAngle + oldfov) / (1 - fovMultiplier);
+    fov = (input.FovMultiplier * (spineAngle + fov) + input.FovConstant) / (1 - input.FovMultiplier);
+    spineAngle = (1 + input.FovMultiplier) * (spineAngle + oldfov) / (1 - input.FovMultiplier);
     oldfov = fov;
-    weighting = spineAngle * weightingMultiplier + weightingConstant;
+    weighting = spineAngle * input.WeightingMultiplier + input.WeightingConstant;
     ringWeighting = weighting;
 
     spineRotation[0] = native_cos(-spineAngle);
@@ -1073,7 +1054,7 @@ RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, 
     if (dotProduct < fov)
       ringWeighting = weighting * dotProduct / fov;
 
-    accumulateRay(geometry, setupTrace(_ray->Position, ringSeed, fov, ringWeighting * baseWeighting, input), &accumulator);
+    accumulateRay(geometry, setupTrace(_ray->Position, ringSeed, fov, ringWeighting * baseWeighting, input), _accumulator);
 
     for (int j = 1; j * fov < M_PI_2_F; j++) {
       ringWeighting = weighting;
@@ -1105,7 +1086,7 @@ RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, 
       if (dotProduct < fov)
         ringWeighting = weighting * dotProduct / fov;
 
-      accumulateRay(geometry, setupTrace(_ray->Position, ringVector, fov, ringWeighting * baseWeighting, input), &accumulator);
+      accumulateRay(geometry, setupTrace(_ray->Position, ringVector, fov, ringWeighting * baseWeighting, input), _accumulator);
 
       ringVector.x = (ringRotation[3] + ringRotation[0]) * ringSeed.x + (ringRotation[4] + ringRotation[11]) * ringSeed.y +
                      (ringRotation[5] - ringRotation[10]) * ringSeed.z;
@@ -1115,10 +1096,9 @@ RayAccumulator spawnRays(Geometry geometry, RayData *_ray, float baseWeighting, 
                      (ringRotation[8] + ringRotation[0]) * ringSeed.z;
       ringVector = normalize(ringVector);
 
-      accumulateRay(geometry, setupTrace(_ray->Position, ringVector, fov, ringWeighting * baseWeighting, input), &accumulator);
+      accumulateRay(geometry, setupTrace(_ray->Position, ringVector, fov, ringWeighting * baseWeighting, input), _accumulator);
     }
   }
-  return accumulator;
 }
 
 // Writing
@@ -1144,16 +1124,15 @@ RayData resolveBackgroundRayData(TraceData data) {
   return ray;
 }
 
-RayData resolveRayData(SurfaceData surfaceData, TraceData *_data) {
+RayData resolveRayData(Block surfaceData, TraceData *_data) {
   RayData ray;
   ray.Normal = normalVector(surfaceData.NormalPitch, surfaceData.NormalYaw);
   ray.ColourR = surfaceData.ColourR;
   ray.ColourG = surfaceData.ColourG;
   ray.ColourB = surfaceData.ColourB;
-  ray.Opacity = surfaceData.Opacity;
+  ray.Opacity = 255;
   ray.Luminosity = 0;
-  ray.Properties = surfaceData.Properties;
-  ray.Position = (float3)(ulongToFloat(_data->Location.x), ulongToFloat(_data->Location.y), ulongToFloat(_data->Location.x));
+  ray.Position = (float3)(ulongToFloat(_data->Location.x), ulongToFloat(_data->Location.y), ulongToFloat(_data->Location.z));
   ray.RayLength = length(ray.Position - _data->Origin);
   ray.Direction = _data->Direction;
   ray.ConeDepth = _data->ConeDepth;
@@ -1170,7 +1149,7 @@ void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accum
 }
 
 void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumulator, int2 coord) {
-  if (accumulator.TotalWeighting > 0)
+  if (accumulator.TotalWeighting > 0.01f)
     write_imagef(outputImage, coord,
                  (float4)(fmin(native_divide(ray.ColourR + (accumulator.ColourR / accumulator.TotalWeighting), 255.0f), 1),
                           fmin(native_divide(ray.ColourG + (accumulator.ColourG / accumulator.TotalWeighting), 255.0f), 1),
@@ -1316,7 +1295,7 @@ uint findAddress(global Block *blocks, global Usage *usage, global uint *childRe
 
 kernel void prune(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests,
                   global uint *parentSize, global bool *parentResidency, global Parent *parents, global uint2 *dereferenceQueue,
-                  global int *dereferenceRemaining, global int *semaphor, global Pruning *pruning, global SurfaceData *pruningSurfaceData,
+                  global int *dereferenceRemaining, global int *semaphor, global Pruning *pruning, global Block *pruningSurfaceData,
                   global ulong *pruningAddresses, UpdateInputData inputData) {
   uint x = get_global_id(0);
   Pruning myPruning = pruning[x];
@@ -1362,7 +1341,7 @@ kernel void prune(global ushort *bases, global Block *blocks, global Usage *usag
 
   // UpdateChunk
   if ((myPruning.Properties >> 3 & 1) == 1) {
-    blocks[address].Data = pruningSurfaceData[x];
+    blocks[address] = pruningSurfaceData[x];
     blocks[address].Chunk = myPruning.Chunk;
   }
 }
@@ -1453,10 +1432,17 @@ kernel void graft(global Block *blocks, global Usage *usage, global uint *childR
 
 kernel void trace(global ushort *bases, global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests,
                   __write_only image2d_t outputImage, TraceInput input) {
-  int2 coord = (int2)(get_global_id(0), get_global_id(1));
-  uint requestReference = (input.ScreenSize.x * coord.y) + coord.x;
+  if (input.FovConstant <= 0 || input.FovMultiplier >= 1 || input.FovMultiplier <= -1)
+    return;
+  
+  int2 coord = (int2)((int)get_global_id(0), (int)get_global_id(1));
   TraceData data = setupInitialTrace(coord, input);
-  RayAccumulator accumulator = {.TotalWeighting = 1};
+  RayAccumulator accumulator = {
+    .TotalWeighting = 0,
+    .ColourR = 0,
+    .ColourG = 0,
+    .ColourB = 0
+    };
 
   // Move ray to bounding volume
   if (!traceIntoVolume(&data)) {
@@ -1471,7 +1457,7 @@ kernel void trace(global ushort *bases, global Block *blocks, global Usage *usag
   RayData ray = traceRay(geometry, data);
   // Accumulate light
   if (ray.Opacity > 0)
-    accumulator = spawnRays(geometry, &ray, 1, input);
+   spawnRays(geometry, &ray, &accumulator, 1, input);
   // Apply accumulated light to ray
   draw(outputImage, ray, accumulator, coord);
 }

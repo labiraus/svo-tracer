@@ -227,7 +227,7 @@ namespace SvoTracer.Kernel
 					paramList = new[] { "blocks", "usage", "childRequestId", "childRequests", "parentSize", "parentResidency", "parents", "dereferenceQueue", "dereferenceRemaining", "semaphor", "grafting", "graftingBlocks", "graftingAddresses", "holdingAddresses", "addressPosition", "inputData" };
 					break;
 				case KernelName.Trace:
-					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "outputImage", "_input" };
+					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "outputImage", "input" };
 					break;
 				default:
 					throw new Exception($"Kernel name {name} not found");

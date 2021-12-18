@@ -10,7 +10,7 @@ namespace SvoTracer.Domain.Serializers
 {
 	public static class TraceInputDataSerializer
 	{
-		public static byte[] Serialize(this PrimeTraceData data)
+		public static byte[] Serialize(this TraceInput data)
 		{
 			var ms = new MemoryStream();
 			var writer = new BinaryWriter(ms);
@@ -36,6 +36,10 @@ namespace SvoTracer.Domain.Serializers
 			writer.Write(data.BaseDepth);
 			writer.Write(data.Tick);
 			writer.Write(data.MaxChildRequestId);
+			writer.Write(data.FovMultiplier);
+			writer.Write(data.FovConstant);
+			writer.Write(data.WeightingMultiplier);
+			writer.Write(data.WeightingConstant);
 			return ms.ToArray();
 		}
 	}

@@ -81,16 +81,14 @@ namespace SvoTracer.Domain
 			{
 				Chunk = MakeChunk(coordinates, depth),
 				Child = uint.MaxValue,
-				Data = new SurfaceData()
-				{
-					NormalPitch = normal.pitch,
-					NormalYaw = normal.yaw,
-					ColourR = colour[0],
-					ColourB = colour[1],
-					ColourG = colour[2],
-					Opacity = byte.MaxValue,
-					Properties = 0
-				}
+				NormalPitch = normal.pitch,
+				NormalYaw = normal.yaw,
+				ColourR = colour[0],
+				ColourB = colour[1],
+				ColourG = colour[2],
+				Opacity = byte.MaxValue,
+				Gloss = 0,
+				Specularity = 0
 			};
 		}
 

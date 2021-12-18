@@ -8,7 +8,14 @@ namespace SvoTracer.Domain.Models
 	{
 		public uint Child;
 		public ushort Chunk;
-		public SurfaceData Data;
+		public short NormalPitch;
+		public short NormalYaw;
+		public byte ColourR;
+		public byte ColourG;
+		public byte ColourB;
+		public byte Opacity;
+		public byte Specularity;
+		public byte Gloss;
 
 		public const int Size = 16;
 	}
