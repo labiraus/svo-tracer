@@ -1,7 +1,8 @@
 typedef struct {
   float RayLength;
   float3 Direction;
-  float3 Position;
+  ulong3 Location;
+  uchar Depth;
   float ConeDepth;
   float3 Normal;
   float Luminosity;
@@ -165,7 +166,7 @@ uchar chunkPosition(uchar depth, ulong3 location);
 bool leaving(TraceData data);
 void traverseChunk(uchar depth, TraceData *_data);
 TraceData setupInitialTrace(int2 coord, TraceInput input);
-TraceData setupTrace(float3 origin, float3 direction, float fov, float weighting, TraceInput input);
+TraceData setupTrace(ulong3 location, float3 direction, uchar depth, float fov, float weighting, TraceInput input);
 bool traceIntoVolume(TraceData *_data);
 Block average(uint address, global Block *blocks, TraceData data);
 RayData traceVoxel(Geometry geometry, TraceData data);
@@ -178,7 +179,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
 
 // Writing
 RayData resolveBackgroundRayData(TraceData data);
-RayData resolveRayData(Block surfaceData, TraceData *_data);
+RayData resolveRayData(Block surfaceData, uchar depth, TraceData *_data);
 void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accumulator);
 void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumulator, int2 coord);
 
@@ -402,9 +403,9 @@ TraceData setupInitialTrace(int2 coord, TraceInput input) {
   return traceData;
 }
 
-TraceData setupTrace(float3 origin, float3 direction, float fov, float weighting, TraceInput input) {
+TraceData setupTrace(ulong3 location, float3 direction, uchar depth, float fov, float weighting, TraceInput input) {
   TraceData traceData = {
-    .Origin = origin,
+    .Origin = (float3)(ulongToFloat(location.x), ulongToFloat(location.y), ulongToFloat(location.z)),
     .Direction = direction,
     .InvDirection = (float3)(native_divide(1, direction.x), native_divide(1, direction.y), native_divide(1, direction.z)),
     .DirectionSignX = direction.x >= 0,
@@ -414,11 +415,13 @@ TraceData setupTrace(float3 origin, float3 direction, float fov, float weighting
     .TraceFoV = fov,
     .Tick = input.Tick,
     .ConeDepth = 0,
-    .Location = (ulong3)(floatToUlong(origin.x), floatToUlong(origin.y), floatToUlong(origin.z)),
+    .Location = location,
     .BaseDepth = input.BaseDepth,
     .MaxChildRequestId = input.MaxChildRequestId,
     .Weighting = weighting,
   };
+  traverseChunk(depth, &traceData);
+  traverseChunk(traceData.ConeDepth, &traceData);
   return traceData;
 }
 
@@ -948,7 +951,7 @@ RayData traceVoxel(Geometry geometry, TraceData data) {
             // C value is too diffuse to use
             if (data.ConeDepth < (data.BaseDepth + 2)) {
               depth = data.BaseDepth + 2;
-              return resolveRayData(geometry.blocks[depthHeap[depth]], &data);
+              return resolveRayData(geometry.blocks[depthHeap[depth]], depth, &data);
             }
 
             // ConeDepth value requires me to go up a level
@@ -959,7 +962,7 @@ RayData traceVoxel(Geometry geometry, TraceData data) {
             // no child found, resolve colour of this voxel
             else if (block.Child == UINT_MAX) {
               requestChild(localAddress, depth, geometry.childRequestId, geometry.childRequests, data.MaxChildRequestId, data.Tick, 1, data.Location);
-              return resolveRayData(block, &data);
+              return resolveRayData(block, depth, &data);
             }
 
             // cone depth not met, navigate to child
@@ -968,7 +971,7 @@ RayData traceVoxel(Geometry geometry, TraceData data) {
             }
 
             else {
-              return resolveRayData(average(localAddress, geometry.blocks, data), &data);
+              return resolveRayData(average(localAddress, geometry.blocks, data), depth, &data);
             }
           }
         }
@@ -1008,6 +1011,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
   float ringRotation[12];
   float spineAngle = 0;
   float ringAngle;
+  uchar depth = _ray->Depth;
 
   float3 spineAxis = normalize(cross(_ray->Direction, _ray->Normal));
 
@@ -1016,7 +1020,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
   if (dotProduct < fov)
     ringWeighting = weighting * dotProduct / fov;
 
-  accumulateRay(geometry, setupTrace(_ray->Position, reflection, fov, ringWeighting * baseWeighting, input), _accumulator);
+  accumulateRay(geometry, setupTrace(_ray->Location, reflection, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
   return;
 
   while (spineAngle < M_PI_F) {
@@ -1054,7 +1058,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
     if (dotProduct < fov)
       ringWeighting = weighting * dotProduct / fov;
 
-    accumulateRay(geometry, setupTrace(_ray->Position, ringSeed, fov, ringWeighting * baseWeighting, input), _accumulator);
+    accumulateRay(geometry, setupTrace(_ray->Location, ringSeed, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
 
     for (int j = 1; j * fov < M_PI_2_F; j++) {
       ringWeighting = weighting;
@@ -1086,7 +1090,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
       if (dotProduct < fov)
         ringWeighting = weighting * dotProduct / fov;
 
-      accumulateRay(geometry, setupTrace(_ray->Position, ringVector, fov, ringWeighting * baseWeighting, input), _accumulator);
+      accumulateRay(geometry, setupTrace(_ray->Location, ringVector, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
 
       ringVector.x = (ringRotation[3] + ringRotation[0]) * ringSeed.x + (ringRotation[4] + ringRotation[11]) * ringSeed.y +
                      (ringRotation[5] - ringRotation[10]) * ringSeed.z;
@@ -1096,7 +1100,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
                      (ringRotation[8] + ringRotation[0]) * ringSeed.z;
       ringVector = normalize(ringVector);
 
-      accumulateRay(geometry, setupTrace(_ray->Position, ringVector, fov, ringWeighting * baseWeighting, input), _accumulator);
+      accumulateRay(geometry, setupTrace(_ray->Location, ringVector, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
     }
   }
 }
@@ -1106,7 +1110,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
 RayData resolveBackgroundRayData(TraceData data) {
   RayData ray;
   ray.Direction = data.Direction;
-  ray.Position = data.Origin;
+  ray.Location = data.Location;
   ray.ConeDepth = data.TraceFoV;
   float dotprod = dot(data.Direction, (float3)(0, 0, -1));
   if (dotprod > 0.8) {
@@ -1121,10 +1125,11 @@ RayData resolveBackgroundRayData(TraceData data) {
     ray.Luminosity = 10.0f;
   }
   ray.Opacity = 0;
+  ray.Depth = 1;
   return ray;
 }
 
-RayData resolveRayData(Block surfaceData, TraceData *_data) {
+RayData resolveRayData(Block surfaceData, uchar depth, TraceData *_data) {
   RayData ray;
   ray.Normal = normalVector(surfaceData.NormalPitch, surfaceData.NormalYaw);
   ray.ColourR = surfaceData.ColourR;
@@ -1132,10 +1137,12 @@ RayData resolveRayData(Block surfaceData, TraceData *_data) {
   ray.ColourB = surfaceData.ColourB;
   ray.Opacity = 255;
   ray.Luminosity = 0;
-  ray.Position = (float3)(ulongToFloat(_data->Location.x), ulongToFloat(_data->Location.y), ulongToFloat(_data->Location.z));
-  ray.RayLength = length(ray.Position - _data->Origin);
+  ray.Location = _data->Location;
+  float3 position = (float3)(ulongToFloat(_data->Location.x), ulongToFloat(_data->Location.y), ulongToFloat(_data->Location.z));
+  ray.RayLength = length(position - _data->Origin);
   ray.Direction = _data->Direction;
   ray.ConeDepth = _data->ConeDepth;
+  ray.Depth = depth;
   return ray;
 }
 
