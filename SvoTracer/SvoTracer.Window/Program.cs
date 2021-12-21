@@ -18,7 +18,6 @@ namespace SvoTracer.Window
 			byte maxDepth = 11;
 			var shape = Shapes.Spheres;
 
-
 			ITreeBuilder treeBuilder;
 			string treeName;
 			switch (shape)
@@ -58,8 +57,8 @@ namespace SvoTracer.Window
 				MaxChildRequestId = 6000,
 				ScreenSize = new(100, 100),
 				BaseDepth = tree.BaseDepth,
-				FovMultiplier = 0.1f,
-				FovConstant = 0.1f,
+				FovMultiplier = 0.2f,
+				FovConstant = 0.2f,
 				WeightingMultiplier = -0.05f,
 				WeightingConstant = 0.5f
 			};

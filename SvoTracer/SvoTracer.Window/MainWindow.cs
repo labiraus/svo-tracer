@@ -233,6 +233,8 @@ namespace SvoTracer.Window
 
 		private void runTrace()
 		{
+			Stopwatch timer = new();
+			timer.Start();
 			//Flush child request buffer
 			var (renderbuffer, waitEvent) = _computeManager.AcquireRenderbuffer();
 			_computeManager.SetArg(KernelName.Trace, "outputImage", renderbuffer);
@@ -242,6 +244,8 @@ namespace SvoTracer.Window
 			var kernelRun = _computeManager.Enqueue(KernelName.Trace, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { waitEvent, waitEvent2 });
 			_computeManager.ReleaseRenderbuffer(new[] { kernelRun });
 			_computeManager.Flush();
+			timer.Stop();
+			Console.Write("\r{0}", 1000.0f / timer.ElapsedMilliseconds);
 		}
 
 		#endregion

@@ -13,9 +13,10 @@ namespace SvoTracer.Kernel
 		private readonly CLCommandQueue _commandQueue;
 		private readonly CLProgram _program;
 		private CLImage renderbuffer = CLImage.Zero;
-		private readonly Dictionary<KernelName, CLKernel> _kernels = new Dictionary<KernelName, CLKernel>();
-		private readonly Dictionary<BufferName, CLBuffer> _buffers = new Dictionary<BufferName, CLBuffer>();
-		private readonly Dictionary<KernelName, Dictionary<string, uint>> _argumentPositions = new Dictionary<KernelName, Dictionary<string, uint>>();
+		private readonly Dictionary<KernelName, CLKernel> _kernels = new();
+		private readonly Dictionary<BufferName, CLBuffer> _buffers = new();
+		private readonly Dictionary<BufferName, int> _bufferSizes = new();
+		private readonly Dictionary<KernelName, Dictionary<string, uint>> _argumentPositions = new();
 
 
 		internal ComputeManager(CLContext context, CLCommandQueue commandQueue, CLProgram program)
@@ -97,6 +98,13 @@ namespace SvoTracer.Kernel
 			var resultCode = CL.SetKernelArg(kernel, _argumentPositions[kernelName][paramName], buffer);
 			HandleResultCode(resultCode, $"SetKernelArg:{kernelName}:{paramName}");
 		}
+		public void SetLocalArg(KernelName kernelName, string paramName, BufferName bufferName)
+		{
+			var kernel = getKernel(kernelName);
+			var bufferSize = _bufferSizes[bufferName];
+			var resultCode = CL.SetKernelArg(kernel, _argumentPositions[kernelName][paramName], bufferSize);
+			HandleResultCode(resultCode, $"SetKernelArg:{kernelName}:{paramName}");
+		}
 
 		public void Wait(CLEvent[] waitEvents)
 		{
@@ -116,7 +124,7 @@ namespace SvoTracer.Kernel
 			return _buffers[bufferName];
 		}
 
-		public void InitBuffer<T>(BufferName bufferName, T[] data) where T : unmanaged
+		public unsafe void InitBuffer<T>(BufferName bufferName, T[] data) where T : unmanaged
 		{
 			CLResultCode resultCode;
 			if (_buffers.ContainsKey(bufferName))
@@ -125,6 +133,7 @@ namespace SvoTracer.Kernel
 				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
 			}
 			_buffers[bufferName] = CL.CreateBuffer(_context, MemoryFlags.ReadWrite | MemoryFlags.UseHostPtr, data, out resultCode);
+			_bufferSizes[bufferName] = data.Length * sizeof(T);
 			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
 		}
 
@@ -137,6 +146,7 @@ namespace SvoTracer.Kernel
 				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
 			}
 			_buffers[bufferName] = CL.CreateBuffer(_context, MemoryFlags.ReadWrite | MemoryFlags.HostNoAccess, (uint)(arraySize * elementSize), IntPtr.Zero, out resultCode);
+			_bufferSizes[bufferName] = arraySize * elementSize;
 			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
 		}
 
@@ -149,10 +159,11 @@ namespace SvoTracer.Kernel
 				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
 			}
 			_buffers[bufferName] = CL.CreateBuffer(_context, MemoryFlags.ReadWrite | MemoryFlags.HostNoAccess, (uint)(arraySize * sizeof(T)), IntPtr.Zero, out resultCode);
+			_bufferSizes[bufferName] = arraySize;
 			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
 		}
 
-		public void InitReadBuffer<T>(BufferName bufferName, T[] data) where T : unmanaged
+		public unsafe void InitReadBuffer<T>(BufferName bufferName, T[] data) where T : unmanaged
 		{
 			CLResultCode resultCode;
 			if (_buffers.ContainsKey(bufferName))
@@ -161,6 +172,7 @@ namespace SvoTracer.Kernel
 				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
 			}
 			_buffers[bufferName] = CL.CreateBuffer(_context, MemoryFlags.ReadOnly | MemoryFlags.CopyHostPtr, data, out resultCode);
+			_bufferSizes[bufferName] = data.Length * sizeof(T);
 			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
 		}
 
@@ -173,6 +185,7 @@ namespace SvoTracer.Kernel
 				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
 			}
 			_buffers[bufferName] = CL.CreateBuffer(_context, MemoryFlags.WriteOnly, (uint)(arraySize * sizeof(T)), IntPtr.Zero, out resultCode);
+			_bufferSizes[bufferName] = arraySize;
 			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
 		}
 

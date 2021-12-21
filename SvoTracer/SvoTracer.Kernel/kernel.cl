@@ -136,6 +136,7 @@ typedef struct {
   uchar BaseDepth;
   uint MaxChildRequestId;
   float Weighting;
+  uchar Depth;
 } TraceData;
 
 typedef struct {
@@ -158,6 +159,7 @@ float3 normalVector(short pitch, short yaw);
 // Tree
 float coneSize(float m, TraceData data);
 void setConeDepth(TraceData *_data);
+void updateUsage(Geometry geometry, uint address, ushort tick);
 
 // Octree
 uint baseLocation(uchar depth, ulong3 location);
@@ -165,10 +167,13 @@ uchar comparePositions(uchar depth, ulong3 previousLocation, TraceData data);
 uchar chunkPosition(uchar depth, ulong3 location);
 bool leaving(TraceData data);
 void traverseChunk(uchar depth, TraceData *_data);
+void traverseChunkNormal(uchar depth, float3 normal, TraceData *_data);
 TraceData setupInitialTrace(int2 coord, TraceInput input);
-TraceData setupTrace(ulong3 location, float3 direction, uchar depth, float fov, float weighting, TraceInput input);
+TraceData setupTrace(ulong3 location, float3 normal, float3 direction, uchar depth, float fov, float weighting, TraceInput input);
 bool traceIntoVolume(TraceData *_data);
 Block average(uint address, global Block *blocks, TraceData data);
+bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHeap);
+bool traceBase(Geometry geometry, RayData *ray, TraceData *data);
 RayData traceVoxel(Geometry geometry, TraceData data);
 RayData traceMesh(Geometry geometry, TraceData _data, RayData mask);
 RayData traceParticle(Geometry geometry, TraceData _data, RayData mask);
@@ -179,7 +184,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
 
 // Writing
 RayData resolveBackgroundRayData(TraceData data);
-RayData resolveRayData(Block surfaceData, uchar depth, TraceData *_data);
+RayData resolveRayData(Block surfaceData, TraceData *_data);
 void writeToAccumulator(RayData overlay, float weighting, RayAccumulator *_accumulator);
 void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumulator, int2 coord);
 
@@ -220,12 +225,8 @@ ulong roundUlong(ulong value, uchar depth, bool roundUp) {
   return output;
 }
 
-uint powSum(uchar depth) {
-  uint output = 0;
-  for (int i = 1; i <= depth; i++)
-    output += (1 << (3 * i));
-  return output;
-}
+// uint powSum(uchar depth) { for (int i = 1; i <= depth; i++) output += (1 << (3 * i)); }
+uint powSum(uchar depth) { return (0b1001001001001001001001001001001000 >> (11 - depth) * 3) - 1; }
 
 void getSemaphor(global int *semaphor) {
   int occupied = atomic_xchg(semaphor, 1);
@@ -254,14 +255,8 @@ float3 normalVector(short pitch, short yaw) {
 // Largest cone size wins
 float coneSize(float m, TraceData data) {
   float eye = data.TraceFoV * m;
-  if (data.DoF.x == 0)
-    return eye;
-
   float fov = fabs(data.DoF.x * (data.DoF.y - m));
-  if (eye < fov)
-    return fov;
-  else
-    return eye;
+  return max(eye, fov);
 }
 
 // Determine the maximum tree depth for a cone at this location
@@ -271,6 +266,12 @@ void setConeDepth(TraceData *_data) {
                                          _data->Origin.z - ulongToFloat(_data->Location.z)))),
                *_data);
   _data->ConeDepth = -half_log2(cone);
+}
+
+void updateUsage(Geometry geometry, uint address, ushort tick) {
+  Usage usageVal = geometry.usage[address];
+  if (usageVal.Tick < USHRT_MAX - 1 && usageVal.Tick != tick)
+    geometry.usage[address].Tick = tick;
 }
 
 // Octree
@@ -371,8 +372,71 @@ void traverseChunk(uchar depth, TraceData *_data) {
   setConeDepth(_data);
 }
 
+// Moves to the furthest neighboring chunk along the Direction vector
+void traverseChunkNormal(uchar depth, float3 normal, TraceData *_data) {
+  bool directionSignX = normal.x >= 0;
+  bool directionSignY = normal.y >= 0;
+  bool directionSignZ = normal.z >= 0;
+  float3 inv = native_divide(1, normal);
+  // determine distance from current location to x, y, z chunk boundary
+  ulong dx = roundUlong(_data->Location.x, depth, directionSignX);
+  ulong dy = roundUlong(_data->Location.y, depth, directionSignY);
+  ulong dz = roundUlong(_data->Location.z, depth, directionSignZ);
+
+  // calulate the shortest of the three lengths
+  float ax = fabs(dx * inv.x);
+  float ay = fabs(dy * inv.y);
+  float az = fabs(dz * inv.z);
+
+  if (ax >= ay && ax >= az) {
+    float udx = ulongToFloat(dx);
+    dy = floatToUlong(normal.y * inv.x * udx);
+    dz = floatToUlong(normal.z * inv.x * udx);
+  } else if (ay >= ax && ay >= az) {
+    float udy = ulongToFloat(dy);
+    dx = floatToUlong(normal.x * inv.y * udy);
+    dz = floatToUlong(normal.z * inv.y * udy);
+  } else {
+    float udz = ulongToFloat(dz);
+    dx = floatToUlong(normal.x * inv.z * udz);
+    dy = floatToUlong(normal.y * inv.z * udz);
+  }
+
+  if (directionSignX)
+    _data->Location.x += dx;
+  else
+    _data->Location.x -= dx;
+
+  if (directionSignY)
+    _data->Location.y += dy;
+  else
+    _data->Location.y -= dy;
+
+  if (directionSignZ)
+    _data->Location.z += dz;
+  else
+    _data->Location.z -= dz;
+
+  // if trafersal has overflowed ulong then the octree has been left
+  if (directionSignX && _data->Location.x == 0)
+    _data->Location.x = ULONG_MAX;
+  else if (!directionSignX && _data->Location.x == ULONG_MAX)
+    _data->Location.x = 0;
+
+  if (directionSignY && _data->Location.y == 0)
+    _data->Location.y = ULONG_MAX;
+  else if (!directionSignY && _data->Location.y == ULONG_MAX)
+    _data->Location.y = 0;
+
+  if (directionSignZ && _data->Location.z == 0)
+    _data->Location.z = ULONG_MAX;
+  else if (!directionSignZ && _data->Location.z == ULONG_MAX)
+    _data->Location.z = 0;
+
+  setConeDepth(_data);
+}
+
 TraceData setupInitialTrace(int2 coord, TraceInput input) {
-  TraceData traceData;
   // rotation around the z axis
   float u = input.FoV[0] * native_divide(native_divide((float)input.ScreenSize.x, 2) - (float)coord.x, (float)input.ScreenSize.x);
   // rotation around the y axis
@@ -385,43 +449,46 @@ TraceData setupInitialTrace(int2 coord, TraceInput input) {
   float matRot1x = (0 - sinU) * cosV;
   float matRot2x = sinV;
 
-  traceData.Direction = (float3)(input.Facing[0] * matRot0x + input.Facing[3] * matRot1x + input.Facing[6] * matRot2x,
-                                 input.Facing[1] * matRot0x + input.Facing[4] * matRot1x + input.Facing[7] * matRot2x,
-                                 input.Facing[2] * matRot0x + input.Facing[5] * matRot1x + input.Facing[8] * matRot2x);
-  traceData.InvDirection =
-      (float3)(native_divide(1, traceData.Direction.x), native_divide(1, traceData.Direction.y), native_divide(1, traceData.Direction.z));
-  traceData.DirectionSignX = traceData.Direction.x >= 0;
-  traceData.DirectionSignY = traceData.Direction.y >= 0;
-  traceData.DirectionSignZ = traceData.Direction.z >= 0;
-  traceData.Origin = (float3)(input.Origin[0], input.Origin[1], input.Origin[2]);
-  traceData.Tick = input.Tick;
-  traceData.DoF = (float2)(input.DoF[0], input.DoF[1]);
-  traceData.TraceFoV = native_divide(input.FoV[0], input.ScreenSize.x);
-  traceData.MaxChildRequestId = input.MaxChildRequestId;
-  traceData.BaseDepth = input.BaseDepth;
-  traceData.Weighting = 1;
+  TraceData traceData = {
+      .Direction = (float3)(input.Facing[0] * matRot0x + input.Facing[3] * matRot1x + input.Facing[6] * matRot2x,
+                            input.Facing[1] * matRot0x + input.Facing[4] * matRot1x + input.Facing[7] * matRot2x,
+                            input.Facing[2] * matRot0x + input.Facing[5] * matRot1x + input.Facing[8] * matRot2x),
+      .InvDirection =
+          (float3)(native_divide(1, traceData.Direction.x), native_divide(1, traceData.Direction.y), native_divide(1, traceData.Direction.z)),
+      .DirectionSignX = traceData.Direction.x >= 0,
+      .DirectionSignY = traceData.Direction.y >= 0,
+      .DirectionSignZ = traceData.Direction.z >= 0,
+      .Origin = (float3)(input.Origin[0], input.Origin[1], input.Origin[2]),
+      .Tick = input.Tick,
+      .DoF = (float2)(input.DoF[0], input.DoF[1]),
+      .TraceFoV = native_divide(input.FoV[0], input.ScreenSize.x),
+      .MaxChildRequestId = input.MaxChildRequestId,
+      .BaseDepth = input.BaseDepth,
+      .Weighting = 1,
+      .Depth = 1,
+  };
   return traceData;
 }
 
-TraceData setupTrace(ulong3 location, float3 direction, uchar depth, float fov, float weighting, TraceInput input) {
+TraceData setupTrace(ulong3 location, float3 normal, float3 direction, uchar depth, float fov, float weighting, TraceInput input) {
   TraceData traceData = {
-    .Origin = (float3)(ulongToFloat(location.x), ulongToFloat(location.y), ulongToFloat(location.z)),
-    .Direction = direction,
-    .InvDirection = (float3)(native_divide(1, direction.x), native_divide(1, direction.y), native_divide(1, direction.z)),
-    .DirectionSignX = direction.x >= 0,
-    .DirectionSignY = direction.y >= 0,
-    .DirectionSignZ = direction.z >= 0,
-    .DoF = (float2)(0, 0),
-    .TraceFoV = fov,
-    .Tick = input.Tick,
-    .ConeDepth = 0,
-    .Location = location,
-    .BaseDepth = input.BaseDepth,
-    .MaxChildRequestId = input.MaxChildRequestId,
-    .Weighting = weighting,
+      .Origin = (float3)(ulongToFloat(location.x), ulongToFloat(location.y), ulongToFloat(location.z)),
+      .Direction = direction,
+      .InvDirection = (float3)(native_divide(1, direction.x), native_divide(1, direction.y), native_divide(1, direction.z)),
+      .DirectionSignX = direction.x >= 0,
+      .DirectionSignY = direction.y >= 0,
+      .DirectionSignZ = direction.z >= 0,
+      .DoF = (float2)(0, 0),
+      .TraceFoV = fov,
+      .Tick = input.Tick,
+      .ConeDepth = 0,
+      .Location = location,
+      .BaseDepth = input.BaseDepth,
+      .MaxChildRequestId = input.MaxChildRequestId,
+      .Weighting = weighting,
+      .Depth = 1,
   };
-  traverseChunk(depth, &traceData);
-  traverseChunk(traceData.ConeDepth, &traceData);
+  traverseChunkNormal(depth, normal, &traceData);
   return traceData;
 }
 
@@ -882,116 +949,113 @@ Block average(uint address, global Block *blocks, TraceData data) {
   return blocks[address];
 }
 
-RayData traceVoxel(Geometry geometry, TraceData data) {
-  uchar depth = 1;
+bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHeap) {
   uint localAddress;
-  ulong3 previousLocation;
-  ushort chunk;
-  Block block;
-  uint oldUsageAddress;
-  Usage usageVal;
+  if (data->Depth == data->BaseDepth + 2)
+    localAddress = baseLocation(data->Depth, data->Location);
+  else
+    localAddress = geometry.blocks[depthHeap[data->Depth - 1]].Child + chunkPosition(data->Depth - 1, data->Location);
+  depthHeap[data->Depth] = localAddress;
 
-  setConeDepth(&data);
+  // Minimize updating usage
+  updateUsage(geometry, localAddress >> 3, data->Tick);
 
-  // block location at each layer of depth
-  uint depthHeap[64];
-  depthHeap[data.BaseDepth + 1] = UINT_MAX;
+  Block block = geometry.blocks[localAddress];
+  // Check if current block chunk contains geometry
+  if (((block.Chunk >> (chunkPosition(data->Depth, data->Location) * 2)) & 2) != 2) {
+    // current block chunk has no geometry, move to edge of chunk and go up a level if this is the edge
+    ulong3 previousLocation = data->Location;
+    traverseChunk(data->Depth, data);
+    if (leaving(*data)) {
+      *ray = resolveBackgroundRayData(*data);
+      return true;
+    }
 
-  // iterate over base chunks
-  while (true) {
-    // check base chunks to see if current location contains geometry and traverse if it doesn't
-    localAddress = powSum(depth - 1) + baseLocation(depth, data.Location);
-    chunk = geometry.bases[localAddress];
-    if (depth <= data.BaseDepth && (chunk >> (chunkPosition(depth, data.Location) * 2) & 2) != 2) {
-      // current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
-      previousLocation = data.Location;
-      traverseChunk(depth, &data);
-      if (leaving(data))
-        return resolveBackgroundRayData(data);
-      depth = comparePositions(depth, previousLocation, data);
-    } else {
-      if (depth < data.BaseDepth) {
-        // Still traversing base chunks
-        depth++;
-      } else {
-        // Traversing blocks
-        depth = data.BaseDepth + 2;
+    data->Depth = comparePositions(data->Depth, previousLocation, *data);
+  } else {
+    // C value is too diffuse to use
+    if (data->ConeDepth < (data->BaseDepth + 2)) {
+      data->Depth = data->BaseDepth + 2;
+      *ray = resolveRayData(geometry.blocks[depthHeap[data->Depth]], data);
+      return true;
+    }
 
-        // iterate over blocks
-        while (depth > (data.BaseDepth + 1)) {
-          oldUsageAddress = localAddress >> 3;
-          if (depth == data.BaseDepth + 2)
-            localAddress = baseLocation(depth, data.Location);
-          else
-            localAddress = geometry.blocks[depthHeap[depth - 1]].Child + chunkPosition(depth - 1, data.Location);
-          depthHeap[depth] = localAddress;
+    // ConeDepth value requires me to go up a level
+    else if (data->ConeDepth < data->Depth) {
+      data->Depth--;
+    }
 
-          // Minimize updating usage
-          if (oldUsageAddress != localAddress >> 3) {
-            usageVal = geometry.usage[localAddress >> 3];
-            if (usageVal.Tick < USHRT_MAX - 1 && usageVal.Tick != data.Tick)
-              geometry.usage[localAddress >> 3].Tick = data.Tick;
-          }
+    // no child found, resolve colour of this voxel
+    else if (block.Child == UINT_MAX) {
+      requestChild(localAddress, data->Depth, geometry.childRequestId, geometry.childRequests, data->MaxChildRequestId, data->Tick, 1,
+                   data->Location);
+      *ray = resolveRayData(block, data);
+      return true;
+    }
 
-          // Update usage
-          if (geometry.usage[localAddress >> 3].Tick < USHRT_MAX - 1)
-            geometry.usage[localAddress >> 3].Tick = data.Tick;
+    // cone data->Depth not met, navigate to child
+    else if (data->ConeDepth > (data->Depth + 1)) {
+      data->Depth++;
+    }
 
-          block = geometry.blocks[localAddress];
-          // Check if current block chunk contains geometry
-          if (((block.Chunk >> (chunkPosition(depth, data.Location) * 2)) & 2) != 2) {
-            // current block chunk has no geometry, move to edge of chunk and go up a level if this is the edge
-            previousLocation = data.Location;
-            traverseChunk(depth, &data);
-            if (leaving(data))
-              return resolveBackgroundRayData(data);
-
-            depth = comparePositions(depth, previousLocation, data);
-          } else {
-            // C value is too diffuse to use
-            if (data.ConeDepth < (data.BaseDepth + 2)) {
-              depth = data.BaseDepth + 2;
-              return resolveRayData(geometry.blocks[depthHeap[depth]], depth, &data);
-            }
-
-            // ConeDepth value requires me to go up a level
-            else if (data.ConeDepth < depth) {
-              depth--;
-            }
-
-            // no child found, resolve colour of this voxel
-            else if (block.Child == UINT_MAX) {
-              requestChild(localAddress, depth, geometry.childRequestId, geometry.childRequests, data.MaxChildRequestId, data.Tick, 1, data.Location);
-              return resolveRayData(block, depth, &data);
-            }
-
-            // cone depth not met, navigate to child
-            else if (data.ConeDepth > (depth + 1)) {
-              depth++;
-            }
-
-            else {
-              return resolveRayData(average(localAddress, geometry.blocks, data), depth, &data);
-            }
-          }
-        }
-        depth = data.BaseDepth;
-      }
+    else {
+      *ray = resolveRayData(average(localAddress, geometry.blocks, *data), data);
+      return true;
     }
   }
+  return false;
 }
 
-RayData traceMesh(Geometry geometry, TraceData _data, RayData mask) { return mask; }
+bool traceBase(Geometry geometry, RayData *ray, TraceData *data) {
+  ushort chunk;
+  chunk = geometry.bases[powSum(data->Depth - 1) + baseLocation(data->Depth, data->Location)];
+  if (data->Depth <= data->BaseDepth && (chunk >> (chunkPosition(data->Depth, data->Location) * 2) & 2) != 2) {
+    // current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
+    ulong3 previousLocation = data->Location;
+    traverseChunk(data->Depth, data);
+    if (leaving(*data)) {
+      *ray = resolveBackgroundRayData(*data);
+      return true;
+    }
+    data->Depth = comparePositions(data->Depth, previousLocation, *data);
+  } else {
+    if (data->Depth < data->BaseDepth)
+      // Still traversing base chunks
+      data->Depth++;
+    else
+      // Traversing blocks
+      data->Depth = data->BaseDepth + 2;
+  }
+  return false;
+}
 
-RayData traceParticle(Geometry geometry, TraceData _data, RayData mask) { return mask; }
+RayData traceVoxel(Geometry geometry, TraceData data) {
+  bool finished = false;
+  uint depthHeap[64];
+  depthHeap[data.BaseDepth + 1] = UINT_MAX;
+  RayData ray;
+  while (!finished) {
+    if (data.Depth == (data.BaseDepth + 1))
+      data.Depth = data.BaseDepth;
+    else if (data.Depth > (data.BaseDepth + 1))
+      finished = traceBlock(geometry, &ray, &data, depthHeap);
+    else
+      finished = traceBase(geometry, &ray, &data);
+  }
+  return ray;
+}
 
-RayData traceLight(Geometry geometry, TraceData _data, RayData mask) { return mask; }
+RayData traceMesh(Geometry geometry, TraceData data, RayData mask) { return mask; }
+
+RayData traceParticle(Geometry geometry, TraceData data, RayData mask) { return mask; }
+
+RayData traceLight(Geometry geometry, TraceData data, RayData mask) { return mask; }
 
 RayData traceRay(Geometry geometry, TraceData data) {
   RayData ray = traceVoxel(geometry, data);
-  //ray = traceMesh(geometry, data, ray);
-  //ray = traceParticle(geometry, data, ray);
-  //ray = traceLight(geometry, data, ray);
+  // ray = traceMesh(geometry, data, ray);
+  // ray = traceParticle(geometry, data, ray);
+  // ray = traceLight(geometry, data, ray);
   return ray;
 }
 
@@ -1020,8 +1084,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
   if (dotProduct < fov)
     ringWeighting = weighting * dotProduct / fov;
 
-  accumulateRay(geometry, setupTrace(_ray->Location, reflection, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
-  return;
+  accumulateRay(geometry, setupTrace(_ray->Location, _ray->Normal, reflection, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
 
   while (spineAngle < M_PI_F) {
     fov = (input.FovMultiplier * (spineAngle + fov) + input.FovConstant) / (1 - input.FovMultiplier);
@@ -1058,7 +1121,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
     if (dotProduct < fov)
       ringWeighting = weighting * dotProduct / fov;
 
-    accumulateRay(geometry, setupTrace(_ray->Location, ringSeed, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
+    accumulateRay(geometry, setupTrace(_ray->Location, _ray->Normal, ringSeed, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
 
     for (int j = 1; j * fov < M_PI_2_F; j++) {
       ringWeighting = weighting;
@@ -1090,7 +1153,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
       if (dotProduct < fov)
         ringWeighting = weighting * dotProduct / fov;
 
-      accumulateRay(geometry, setupTrace(_ray->Location, ringVector, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
+      accumulateRay(geometry, setupTrace(_ray->Location, _ray->Normal, ringVector, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
 
       ringVector.x = (ringRotation[3] + ringRotation[0]) * ringSeed.x + (ringRotation[4] + ringRotation[11]) * ringSeed.y +
                      (ringRotation[5] - ringRotation[10]) * ringSeed.z;
@@ -1100,7 +1163,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
                      (ringRotation[8] + ringRotation[0]) * ringSeed.z;
       ringVector = normalize(ringVector);
 
-      accumulateRay(geometry, setupTrace(_ray->Location, ringVector, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
+      accumulateRay(geometry, setupTrace(_ray->Location, _ray->Normal, ringVector, depth, fov, ringWeighting * baseWeighting, input), _accumulator);
     }
   }
 }
@@ -1108,10 +1171,7 @@ void spawnRays(Geometry geometry, RayData *_ray, RayAccumulator *_accumulator, f
 // Writing
 // Combine _data colour+opacity with background colour and write to output
 RayData resolveBackgroundRayData(TraceData data) {
-  RayData ray;
-  ray.Direction = data.Direction;
-  ray.Location = data.Location;
-  ray.ConeDepth = data.TraceFoV;
+  RayData ray = {.RayLength = 100, .Direction = data.Direction, .Location = data.Location, .ConeDepth = data.TraceFoV, .Opacity = 0, .Depth = 1};
   float dotprod = dot(data.Direction, (float3)(0, 0, -1));
   if (dotprod > 0.8) {
     ray.ColourR = 255;
@@ -1124,12 +1184,10 @@ RayData resolveBackgroundRayData(TraceData data) {
     ray.ColourB = 235;
     ray.Luminosity = 10.0f;
   }
-  ray.Opacity = 0;
-  ray.Depth = 1;
   return ray;
 }
 
-RayData resolveRayData(Block surfaceData, uchar depth, TraceData *_data) {
+RayData resolveRayData(Block surfaceData, TraceData *_data) {
   RayData ray;
   ray.Normal = normalVector(surfaceData.NormalPitch, surfaceData.NormalYaw);
   ray.ColourR = surfaceData.ColourR;
@@ -1142,7 +1200,7 @@ RayData resolveRayData(Block surfaceData, uchar depth, TraceData *_data) {
   ray.RayLength = length(position - _data->Origin);
   ray.Direction = _data->Direction;
   ray.ConeDepth = _data->ConeDepth;
-  ray.Depth = depth;
+  ray.Depth = _data->Depth;
   return ray;
 }
 
@@ -1441,15 +1499,10 @@ kernel void trace(global ushort *bases, global Block *blocks, global Usage *usag
                   __write_only image2d_t outputImage, TraceInput input) {
   if (input.FovConstant <= 0 || input.FovMultiplier >= 1 || input.FovMultiplier <= -1)
     return;
-  
+
   int2 coord = (int2)((int)get_global_id(0), (int)get_global_id(1));
   TraceData data = setupInitialTrace(coord, input);
-  RayAccumulator accumulator = {
-    .TotalWeighting = 0,
-    .ColourR = 0,
-    .ColourG = 0,
-    .ColourB = 0
-    };
+  RayAccumulator accumulator = {.TotalWeighting = 0, .ColourR = 0, .ColourG = 0, .ColourB = 0};
 
   // Move ray to bounding volume
   if (!traceIntoVolume(&data)) {
@@ -1457,14 +1510,16 @@ kernel void trace(global ushort *bases, global Block *blocks, global Usage *usag
     draw(outputImage, resolveBackgroundRayData(data), accumulator, coord);
     return;
   }
-
   Geometry geometry = {.bases = bases, .blocks = blocks, .usage = usage, .childRequestId = childRequestId, .childRequests = childRequests};
 
   // Perform initial trace
   RayData ray = traceRay(geometry, data);
+  // Draw result if it hits skybox
+  if (ray.Opacity == 0)
+    draw(outputImage, ray, accumulator, coord);
+
   // Accumulate light
-  if (ray.Opacity > 0)
-   spawnRays(geometry, &ray, &accumulator, 1, input);
+  spawnRays(geometry, &ray, &accumulator, 1, input);
   // Apply accumulated light to ray
   draw(outputImage, ray, accumulator, coord);
 }
