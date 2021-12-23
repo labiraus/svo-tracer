@@ -139,12 +139,38 @@ typedef struct {
   uchar Depth;
 } TraceData;
 
+typedef struct{
+  // Position
+  float3 Origin;
+  // Vector direction
+  float3 Direction;
+  float2 DoF;
+  float TraceFoV;
+  float ConeDepth;
+  ulong3 Location;
+  float Weighting;
+  uchar Depth;
+} SavedTrace;
+
 typedef struct {
   global ushort *bases;
   global Block *blocks;
   global Usage *usage;
   global uint *childRequestId;
   global ChildRequest *childRequests;
+  global float3 *origins;
+  global float3 *directions;
+  global float2 *doFs;
+  global float *traceFoVs;
+  global ulong3 *locations;
+  global float *weightings;
+  global uchar *depths;
+  global uint *baseTraces;
+  global uint *traces;
+  global uint *traceQueue;
+  global uint *traceQueueId;
+  global uint *baseTraceQueue;
+  global uint *baseTraceQueueId;
 } Geometry;
 
 // Inline math
@@ -156,10 +182,21 @@ void getSemaphor(global int *semaphor);
 void releaseSemaphor(global int *semaphor);
 float3 normalVector(short pitch, short yaw);
 
+//Memory
+ushort getBase(Geometry geometry, uint address);
+Block getBlock(Geometry geometry, uint address);
+TraceData resolveTrace(Geometry geometry, TraceInput input, uint id);
+TraceData getBaseTrace(Geometry geometry, TraceInput input);
+TraceData getTrace(Geometry geometry, TraceInput input);
+void saveBaseTrace(Geometry geometry, TraceData trace);
+void saveTrace(Geometry geometry, TraceData trace);
+void requestChild(Geometry geometry, ChildRequest request);
+ChildRequest buildChildRequest(uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location);
+void updateUsage(Geometry geometry, uint address, ushort tick);
+
 // Tree
 float coneSize(float m, TraceData data);
 void setConeDepth(TraceData *_data);
-void updateUsage(Geometry geometry, uint address, ushort tick);
 
 // Octree
 uint baseLocation(uchar depth, ulong3 location);
@@ -171,7 +208,7 @@ void traverseChunkNormal(uchar depth, float3 normal, TraceData *_data);
 TraceData setupInitialTrace(int2 coord, TraceInput input);
 TraceData setupTrace(ulong3 location, float3 normal, float3 direction, uchar depth, float fov, float weighting, TraceInput input);
 bool traceIntoVolume(TraceData *_data);
-Block average(uint address, global Block *blocks, TraceData data);
+Block average(uint address, Geometry geometry, TraceData data);
 bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHeap);
 bool traceBase(Geometry geometry, RayData *ray, TraceData *data);
 RayData traceVoxel(Geometry geometry, TraceData data);
@@ -196,8 +233,6 @@ void dereference(global Block *blocks, global Usage *usage, global uint *parentS
 uint findAddress(global Block *blocks, global Usage *usage, global uint *childRequestId, global ChildRequest *childRequests, global uint *parentSize,
                  global bool *parentResidency, global Parent *parents, global uint2 *dereferenceQueue, global int *dereferenceRemaining,
                  global int *semaphor, global ulong *addresses, UpdateInputData inputData, uint address, uint depth);
-void requestChild(uint address, uchar depth, global uint *childRequestId, global ChildRequest *childRequests, uint maxChildRequestId, ushort tick,
-                  uchar treeSize, ulong3 location);
 
 // Inline math
 
@@ -249,6 +284,81 @@ float3 normalVector(short pitch, short yaw) {
   return (float3)(cosYaw * cosPitch, sinYaw * cosPitch, sinPitch);
 }
 
+// Memory
+
+ushort getBase(Geometry geometry, uint address){
+  return geometry.bases[address];
+}
+
+Block getBlock(Geometry geometry, uint address){
+  return geometry.blocks[address];
+}
+
+TraceData resolveTrace(Geometry geometry, TraceInput input, uint id){
+  TraceData data = {
+    .Origin = geometry.origins[id],
+    .Direction = geometry.directions[id],
+    .DoF = geometry.doFs[id],
+    .TraceFoV = geometry.traceFoVs[id],
+    .Location = geometry.locations[id],
+    .Weighting = geometry.weightings[id],
+    .Depth = geometry.depths[id],
+  };
+  data.InvDirection = native_divide(1, data.Direction);
+  data.DirectionSignX = data.Direction.x >= 0;
+  data.DirectionSignY = data.Direction.y >= 0;
+  data.DirectionSignZ = data.Direction.z >= 0;
+  setConeDepth(&data);
+  return data;
+}
+
+TraceData getTrace(Geometry geometry, TraceInput input){
+  return resolveTrace(geometry, input, geometry.traces[get_global_id(0)]);
+}
+
+TraceData getBaseTrace(Geometry geometry, TraceInput input){
+  return resolveTrace(geometry, input, geometry.baseTraces[get_global_id(0)]);
+}
+
+void saveBaseTrace(Geometry geometry, TraceData trace){
+  uint traceId = geometry.baseTraces[get_global_id(0)];
+  geometry.locations[traceId] = trace.Location;
+  geometry.depths[traceId] = trace.Depth;
+  uint id = atomic_inc(geometry.baseTraceQueueId);
+  geometry.baseTraceQueue[id] = traceId;
+}
+
+void saveTrace(Geometry geometry, TraceData trace){
+  uint traceId = geometry.baseTraces[get_global_id(0)];
+  geometry.locations[traceId] = trace.Location;
+  geometry.depths[traceId] = trace.Depth;
+  uint id = atomic_inc(geometry.traceQueueId);
+  geometry.traceQueue[id] = traceId;
+}
+
+void requestChild(Geometry geometry, ChildRequest request){
+  uint id = atomic_inc(geometry.childRequestId);
+  geometry.childRequests[id] = request;
+}
+
+ChildRequest buildChildRequest(uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location) {
+  ChildRequest request;
+  request.Address = address;
+  request.Tick = tick;
+  request.Depth = depth;
+  request.Location[0] = location.x;
+  request.Location[1] = location.y;
+  request.Location[2] = location.z;
+  request.TreeSize = treeSize;
+  return request;
+}
+
+void updateUsage(Geometry geometry, uint address, ushort tick) {
+  Usage usageVal = geometry.usage[address];
+  if (usageVal.Tick < USHRT_MAX - 1 && usageVal.Tick != tick)
+    geometry.usage[address].Tick = tick;
+}
+
 // Tree
 
 // Calculates the cone size at a given depth from FoV and pixel diameter data
@@ -266,12 +376,6 @@ void setConeDepth(TraceData *_data) {
                                          _data->Origin.z - ulongToFloat(_data->Location.z)))),
                *_data);
   _data->ConeDepth = -half_log2(cone);
-}
-
-void updateUsage(Geometry geometry, uint address, ushort tick) {
-  Usage usageVal = geometry.usage[address];
-  if (usageVal.Tick < USHRT_MAX - 1 && usageVal.Tick != tick)
-    geometry.usage[address].Tick = tick;
 }
 
 // Octree
@@ -944,9 +1048,9 @@ bool traceIntoVolume(TraceData *_data) {
   return !(locationX < -c || locationX > 1 + c || locationY < -c || locationY > 1 + c || locationZ < -c || locationZ > 1 + c);
 }
 
-Block average(uint address, global Block *blocks, TraceData data) {
+Block average(uint address, Geometry geometry, TraceData data) {
   // Average like heck
-  return blocks[address];
+  return getBlock(geometry, address);
 }
 
 bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHeap) {
@@ -954,13 +1058,13 @@ bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHea
   if (data->Depth == data->BaseDepth + 2)
     localAddress = baseLocation(data->Depth, data->Location);
   else
-    localAddress = geometry.blocks[depthHeap[data->Depth - 1]].Child + chunkPosition(data->Depth - 1, data->Location);
+    localAddress = getBlock(geometry, depthHeap[data->Depth - 1]).Child + chunkPosition(data->Depth - 1, data->Location);
   depthHeap[data->Depth] = localAddress;
 
   // Minimize updating usage
   updateUsage(geometry, localAddress >> 3, data->Tick);
 
-  Block block = geometry.blocks[localAddress];
+  Block block = getBlock(geometry, localAddress);
   // Check if current block chunk contains geometry
   if (((block.Chunk >> (chunkPosition(data->Depth, data->Location) * 2)) & 2) != 2) {
     // current block chunk has no geometry, move to edge of chunk and go up a level if this is the edge
@@ -976,7 +1080,7 @@ bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHea
     // C value is too diffuse to use
     if (data->ConeDepth < (data->BaseDepth + 2)) {
       data->Depth = data->BaseDepth + 2;
-      *ray = resolveRayData(geometry.blocks[depthHeap[data->Depth]], data);
+      *ray = resolveRayData(getBlock(geometry, depthHeap[data->Depth]), data);
       return true;
     }
 
@@ -987,8 +1091,7 @@ bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHea
 
     // no child found, resolve colour of this voxel
     else if (block.Child == UINT_MAX) {
-      requestChild(localAddress, data->Depth, geometry.childRequestId, geometry.childRequests, data->MaxChildRequestId, data->Tick, 1,
-                   data->Location);
+      requestChild(geometry, buildChildRequest(localAddress, data->Depth, data->Tick, 1, data->Location));
       *ray = resolveRayData(block, data);
       return true;
     }
@@ -999,7 +1102,7 @@ bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHea
     }
 
     else {
-      *ray = resolveRayData(average(localAddress, geometry.blocks, *data), data);
+      *ray = resolveRayData(average(localAddress, geometry, *data), data);
       return true;
     }
   }
@@ -1008,7 +1111,7 @@ bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHea
 
 bool traceBase(Geometry geometry, RayData *ray, TraceData *data) {
   ushort chunk;
-  chunk = geometry.bases[powSum(data->Depth - 1) + baseLocation(data->Depth, data->Location)];
+  chunk = getBase(geometry, powSum(data->Depth - 1) + baseLocation(data->Depth, data->Location));
   if (data->Depth <= data->BaseDepth && (chunk >> (chunkPosition(data->Depth, data->Location) * 2) & 2) != 2) {
     // current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
     ulong3 previousLocation = data->Location;
@@ -1226,22 +1329,6 @@ void draw(__write_only image2d_t outputImage, RayData ray, RayAccumulator accumu
 
 // Tree Management
 
-void requestChild(uint address, uchar depth, global uint *childRequestId, global ChildRequest *childRequests, uint maxChildRequestId, ushort tick,
-                  uchar treeSize, ulong3 location) {
-  uint currentId = atomic_inc(childRequestId);
-  if (currentId >= maxChildRequestId)
-    return;
-  ChildRequest request;
-  request.Address = address;
-  request.Tick = tick;
-  request.Depth = depth;
-  request.Location[0] = location.x;
-  request.Location[1] = location.y;
-  request.Location[2] = location.z;
-  request.TreeSize = treeSize;
-  childRequests[currentId] = request;
-}
-
 void helpDereference(global Block *blocks, global Usage *usage, global uint *parentSize, global bool *parentResidency, global Parent *parents,
                      global uint2 *dereferenceQueue, global int *dereferenceRemaining, global int *semaphor, ushort tick) {
   // All local threads get to play the dereferencing game
@@ -1347,7 +1434,8 @@ uint findAddress(global Block *blocks, global Usage *usage, global uint *childRe
     }
     // Hit the bottom of the tree and not found it
     if (blocks[address].Child == UINT_MAX) {
-      requestChild(address, i, childRequestId, childRequests, inputData.MaxChildRequestId, inputData.Tick, depth - i, location);
+      Geometry geometry;
+      requestChild(geometry, buildChildRequest(address, i, inputData.Tick, depth - i, location));
       helpDereference(blocks, usage, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining, semaphor, inputData.Tick);
       return UINT_MAX;
     }
