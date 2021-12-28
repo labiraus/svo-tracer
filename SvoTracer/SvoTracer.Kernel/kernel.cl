@@ -97,14 +97,6 @@ typedef struct {
 } TraceInput;
 
 typedef struct {
-  uchar MaxOpacity;
-  // Depth of inviolate memory(Specific to voxels)
-  uchar BaseDepth;
-  ushort Tick;
-  uint MaxChildRequestId;
-} RequestTraceData;
-
-typedef struct {
   uchar BaseDepth;
   ushort Tick;
   uint MaxChildRequestId;
@@ -133,10 +125,10 @@ typedef struct {
   // Current chunk
   ulong3 Location;
   // Depth of inviolate memory(Specific to voxels)
-  uchar BaseDepth;
   uint MaxChildRequestId;
   float Weighting;
   uchar Depth;
+  uint LastAddress;
 } TraceData;
 
 typedef struct{
@@ -165,12 +157,14 @@ typedef struct {
   global ulong3 *locations;
   global float *weightings;
   global uchar *depths;
+  global uint *lastAddress;
   global uint *baseTraces;
   global uint *traces;
   global uint *traceQueue;
   global uint *traceQueueId;
   global uint *baseTraceQueue;
   global uint *baseTraceQueueId;
+  const uchar baseDepth;
 } Geometry;
 
 // Inline math
@@ -183,8 +177,9 @@ void releaseSemaphor(global int *semaphor);
 float3 normalVector(short pitch, short yaw);
 
 //Memory
-ushort getBase(Geometry geometry, uint address);
+ushort getBase(Geometry geometry, uchar depth, ulong3 location);
 Block getBlock(Geometry geometry, uint address);
+Block getLocationBlock(Geometry geometry,  uchar depth, ulong3 location);
 TraceData resolveTrace(Geometry geometry, TraceInput input, uint id);
 TraceData getBaseTrace(Geometry geometry, TraceInput input);
 TraceData getTrace(Geometry geometry, TraceInput input);
@@ -286,12 +281,21 @@ float3 normalVector(short pitch, short yaw) {
 
 // Memory
 
-ushort getBase(Geometry geometry, uint address){
+ushort getBase(Geometry geometry, uchar depth, ulong3 location){
+  uint address = powSum(depth - 1) + baseLocation(depth, location);
   return geometry.bases[address];
 }
 
 Block getBlock(Geometry geometry, uint address){
   return geometry.blocks[address];
+}
+
+Block getLocationBlock(Geometry geometry, uchar depth, ulong3 location){
+  uint address = baseLocation(geometry.baseDepth + 2, location) + chunkPosition(geometry.baseDepth + 2, location);
+  for (uchar d = geometry.baseDepth + 3; d <= depth; d++){
+    address = getBlock(geometry, address).Child + chunkPosition(d, location);
+  }
+  return getBlock(geometry, address);
 }
 
 TraceData resolveTrace(Geometry geometry, TraceInput input, uint id){
@@ -567,7 +571,6 @@ TraceData setupInitialTrace(int2 coord, TraceInput input) {
       .DoF = (float2)(input.DoF[0], input.DoF[1]),
       .TraceFoV = native_divide(input.FoV[0], input.ScreenSize.x),
       .MaxChildRequestId = input.MaxChildRequestId,
-      .BaseDepth = input.BaseDepth,
       .Weighting = 1,
       .Depth = 1,
   };
@@ -587,7 +590,6 @@ TraceData setupTrace(ulong3 location, float3 normal, float3 direction, uchar dep
       .Tick = input.Tick,
       .ConeDepth = 0,
       .Location = location,
-      .BaseDepth = input.BaseDepth,
       .MaxChildRequestId = input.MaxChildRequestId,
       .Weighting = weighting,
       .Depth = 1,
@@ -1055,7 +1057,7 @@ Block average(uint address, Geometry geometry, TraceData data) {
 
 bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHeap) {
   uint localAddress;
-  if (data->Depth == data->BaseDepth + 2)
+  if (data->Depth == geometry.baseDepth + 2)
     localAddress = baseLocation(data->Depth, data->Location);
   else
     localAddress = getBlock(geometry, depthHeap[data->Depth - 1]).Child + chunkPosition(data->Depth - 1, data->Location);
@@ -1078,8 +1080,8 @@ bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHea
     data->Depth = comparePositions(data->Depth, previousLocation, *data);
   } else {
     // C value is too diffuse to use
-    if (data->ConeDepth < (data->BaseDepth + 2)) {
-      data->Depth = data->BaseDepth + 2;
+    if (data->ConeDepth < (geometry.baseDepth + 2)) {
+      data->Depth = geometry.baseDepth + 2;
       *ray = resolveRayData(getBlock(geometry, depthHeap[data->Depth]), data);
       return true;
     }
@@ -1111,8 +1113,8 @@ bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHea
 
 bool traceBase(Geometry geometry, RayData *ray, TraceData *data) {
   ushort chunk;
-  chunk = getBase(geometry, powSum(data->Depth - 1) + baseLocation(data->Depth, data->Location));
-  if (data->Depth <= data->BaseDepth && (chunk >> (chunkPosition(data->Depth, data->Location) * 2) & 2) != 2) {
+  chunk = getBase(geometry, data->Depth, data->Location);
+  if (data->Depth <= geometry.baseDepth && (chunk >> (chunkPosition(data->Depth, data->Location) * 2) & 2) != 2) {
     // current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
     ulong3 previousLocation = data->Location;
     traverseChunk(data->Depth, data);
@@ -1122,12 +1124,12 @@ bool traceBase(Geometry geometry, RayData *ray, TraceData *data) {
     }
     data->Depth = comparePositions(data->Depth, previousLocation, *data);
   } else {
-    if (data->Depth < data->BaseDepth)
+    if (data->Depth < geometry.baseDepth)
       // Still traversing base chunks
       data->Depth++;
     else
       // Traversing blocks
-      data->Depth = data->BaseDepth + 2;
+      data->Depth = geometry.baseDepth + 2;
   }
   return false;
 }
@@ -1135,12 +1137,12 @@ bool traceBase(Geometry geometry, RayData *ray, TraceData *data) {
 RayData traceVoxel(Geometry geometry, TraceData data) {
   bool finished = false;
   uint depthHeap[64];
-  depthHeap[data.BaseDepth + 1] = UINT_MAX;
+  depthHeap[geometry.baseDepth + 1] = UINT_MAX;
   RayData ray;
   while (!finished) {
-    if (data.Depth == (data.BaseDepth + 1))
-      data.Depth = data.BaseDepth;
-    else if (data.Depth > (data.BaseDepth + 1))
+    if (data.Depth == (geometry.baseDepth + 1))
+      data.Depth = geometry.baseDepth;
+    else if (data.Depth > (geometry.baseDepth + 1))
       finished = traceBlock(geometry, &ray, &data, depthHeap);
     else
       finished = traceBase(geometry, &ray, &data);
@@ -1598,7 +1600,7 @@ kernel void trace(global ushort *bases, global Block *blocks, global Usage *usag
     draw(outputImage, resolveBackgroundRayData(data), accumulator, coord);
     return;
   }
-  Geometry geometry = {.bases = bases, .blocks = blocks, .usage = usage, .childRequestId = childRequestId, .childRequests = childRequests};
+  Geometry geometry = {.bases = bases, .blocks = blocks, .usage = usage, .childRequestId = childRequestId, .childRequests = childRequests, .baseDepth = input.BaseDepth};
 
   // Perform initial trace
   RayData ray = traceRay(geometry, data);
