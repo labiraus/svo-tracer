@@ -179,12 +179,6 @@ float3 normalVector(short pitch, short yaw);
 //Memory
 ushort getBase(Geometry geometry, uchar depth, ulong3 location);
 Block getBlock(Geometry geometry, uint address);
-Block getLocationBlock(Geometry geometry,  uchar depth, ulong3 location);
-TraceData resolveTrace(Geometry geometry, TraceInput input, uint id);
-TraceData getBaseTrace(Geometry geometry, TraceInput input);
-TraceData getTrace(Geometry geometry, TraceInput input);
-void saveBaseTrace(Geometry geometry, TraceData trace);
-void saveTrace(Geometry geometry, TraceData trace);
 void requestChild(Geometry geometry, ChildRequest request);
 ChildRequest buildChildRequest(uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location);
 void updateUsage(Geometry geometry, uint address, ushort tick);
@@ -288,56 +282,6 @@ ushort getBase(Geometry geometry, uchar depth, ulong3 location){
 
 Block getBlock(Geometry geometry, uint address){
   return geometry.blocks[address];
-}
-
-Block getLocationBlock(Geometry geometry, uchar depth, ulong3 location){
-  uint address = baseLocation(geometry.baseDepth + 2, location) + chunkPosition(geometry.baseDepth + 2, location);
-  for (uchar d = geometry.baseDepth + 3; d <= depth; d++){
-    address = getBlock(geometry, address).Child + chunkPosition(d, location);
-  }
-  return getBlock(geometry, address);
-}
-
-TraceData resolveTrace(Geometry geometry, TraceInput input, uint id){
-  TraceData data = {
-    .Origin = geometry.origins[id],
-    .Direction = geometry.directions[id],
-    .DoF = geometry.doFs[id],
-    .TraceFoV = geometry.traceFoVs[id],
-    .Location = geometry.locations[id],
-    .Weighting = geometry.weightings[id],
-    .Depth = geometry.depths[id],
-  };
-  data.InvDirection = native_divide(1, data.Direction);
-  data.DirectionSignX = data.Direction.x >= 0;
-  data.DirectionSignY = data.Direction.y >= 0;
-  data.DirectionSignZ = data.Direction.z >= 0;
-  setConeDepth(&data);
-  return data;
-}
-
-TraceData getTrace(Geometry geometry, TraceInput input){
-  return resolveTrace(geometry, input, geometry.traces[get_global_id(0)]);
-}
-
-TraceData getBaseTrace(Geometry geometry, TraceInput input){
-  return resolveTrace(geometry, input, geometry.baseTraces[get_global_id(0)]);
-}
-
-void saveBaseTrace(Geometry geometry, TraceData trace){
-  uint traceId = geometry.baseTraces[get_global_id(0)];
-  geometry.locations[traceId] = trace.Location;
-  geometry.depths[traceId] = trace.Depth;
-  uint id = atomic_inc(geometry.baseTraceQueueId);
-  geometry.baseTraceQueue[id] = traceId;
-}
-
-void saveTrace(Geometry geometry, TraceData trace){
-  uint traceId = geometry.baseTraces[get_global_id(0)];
-  geometry.locations[traceId] = trace.Location;
-  geometry.depths[traceId] = trace.Depth;
-  uint id = atomic_inc(geometry.traceQueueId);
-  geometry.traceQueue[id] = traceId;
 }
 
 void requestChild(Geometry geometry, ChildRequest request){
