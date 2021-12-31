@@ -10,6 +10,13 @@ namespace SvoTracer.Kernel
 	{
 		Prune,
 		Graft,
-		Trace
+		Trace,
+		Init,
+		RunBaseTrace,
+		RunBlockTrace,
+		EvaluateBackground,
+		EvaluateMaterial,
+		ResolveAccumulators,
+		DrawTrace,
 	}
 }
