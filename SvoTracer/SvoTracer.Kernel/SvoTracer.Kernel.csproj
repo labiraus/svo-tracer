@@ -11,6 +11,7 @@
     <None Remove="kernel.cl" />
     <None Remove="models.h" />
     <None Remove="test.cl" />
+    <None Remove="wavefront.cl" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,6 +19,7 @@
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
     <EmbeddedResource Include="test.cl" />
+    <EmbeddedResource Include="wavefront.cl" />
   </ItemGroup>
 
   <ItemGroup>

@@ -163,6 +163,23 @@ namespace SvoTracer.Kernel
 			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
 		}
 
+		public unsafe CLEvent InitDeviceBuffer<T>(BufferName bufferName, int arraySize, T val) where T : unmanaged
+		{
+			CLResultCode resultCode;
+			if (_buffers.ContainsKey(bufferName))
+			{
+				resultCode = CL.ReleaseMemoryObject(_buffers[bufferName]);
+				HandleResultCode(resultCode, $"ReleaseBuffer:{bufferName}");
+			}
+			var buffer = CL.CreateBuffer(_context, MemoryFlags.ReadWrite | MemoryFlags.HostNoAccess, (uint)(arraySize * sizeof(T)), IntPtr.Zero, out resultCode);
+			HandleResultCode(resultCode, $"EnqueueFillBuffer:{bufferName}");
+			_buffers[bufferName] = buffer;
+			_bufferSizes[bufferName] = arraySize;
+			resultCode = CL.EnqueueFillBuffer(_commandQueue, buffer, new[] { val }, 0, (nuint)arraySize, null, out CLEvent waitEvent);
+			HandleResultCode(resultCode, $"CreateBuffer:{bufferName}");
+			return waitEvent;
+		}
+
 		public unsafe void InitReadBuffer<T>(BufferName bufferName, T[] data) where T : unmanaged
 		{
 			CLResultCode resultCode;
@@ -212,7 +229,16 @@ namespace SvoTracer.Kernel
 			HandleResultCode(resultCode, $"EnqueueReadBuffer:{bufferName}");
 			resultCode = CL.EnqueueWriteBuffer(_commandQueue, buffer, false, 0, new uint[] { 0 }, new[] { waitEvent }, out CLEvent finishEvent);
 			HandleResultCode(resultCode, $"EnqueueWriteBuffer:{bufferName}");
+			CL.WaitForEvents(new[] { waitEvent });
 			return (output[0], finishEvent);
+		}
+
+		public CLEvent ZeroIDBuffer(BufferName bufferName, CLEvent[] initEvent)
+		{
+			var buffer = getBuffer(bufferName);
+			var resultCode = CL.EnqueueWriteBuffer(_commandQueue, buffer, false, 0, new uint[] { 0 }, initEvent, out CLEvent finishEvent);
+			HandleResultCode(resultCode, $"EnqueueWriteBuffer:{bufferName}");
+			return finishEvent;
 		}
 
 		public void Swap(BufferName buffer1, BufferName buffer2)
@@ -221,12 +247,35 @@ namespace SvoTracer.Kernel
 			_buffers[buffer1] = _buffers[buffer2];
 			_buffers[buffer2] = holding;
 		}
+
+		public CLEvent FillBuffer<T>(BufferName bufferName, T[] pattern, uint size) where T : unmanaged
+		{
+			var buffer = getBuffer(bufferName);
+			var resultCode = CL.EnqueueFillBuffer(_commandQueue, buffer, pattern, 0, (nuint)size, null, out CLEvent waitEvent);
+			HandleResultCode(resultCode, $"EnqueueFillBuffer:{bufferName}");
+			return waitEvent;
+		}
+
+		public CLEvent FillBuffer<T>(BufferName bufferName, T val) where T : unmanaged
+		{
+			var buffer = getBuffer(bufferName);
+			var size = _bufferSizes[bufferName];
+			var resultCode = CL.EnqueueFillBuffer(_commandQueue, buffer, new[] { val }, 0, (nuint)size, null, out CLEvent waitEvent);
+			HandleResultCode(resultCode, $"EnqueueFillBuffer:{bufferName}");
+			return waitEvent;
+		}
+
 		#endregion
 
 		public void Flush()
 		{
 			var resultCode = CL.Flush(_commandQueue);
 			HandleResultCode(resultCode, $"Flush");
+		}
+
+		public void WaitAll(IEnumerable<CLEvent> events)
+		{
+			CL.WaitForEvents((uint)events.Count(), events.ToArray());
 		}
 
 		public static void HandleResultCode(CLResultCode resultCode, string method)
@@ -242,6 +291,13 @@ namespace SvoTracer.Kernel
 				KernelName.Prune => "prune",
 				KernelName.Graft => "graft",
 				KernelName.Trace => "trace",
+				KernelName.Init => "Init",
+				KernelName.RunBaseTrace => "RunBaseTrace",
+				KernelName.RunBlockTrace => "RunBlockTrace",
+				KernelName.EvaluateBackground => "EvaluateBackground",
+				KernelName.EvaluateMaterial => "EvaluateMaterial",
+				KernelName.ResolveAccumulators => "ResolveAccumulators",
+				KernelName.DrawTrace => "DrawTrace",
 				_ => throw new Exception($"Kernel name {name} not found"),
 			};
 		}
