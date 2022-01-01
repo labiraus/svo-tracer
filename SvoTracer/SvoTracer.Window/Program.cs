@@ -55,7 +55,6 @@ namespace SvoTracer.Window
 				DoF = new(0, 0),
 				MaxOpacity = 200,
 				MaxChildRequestId = 6000,
-				ScreenSize = new(100, 100),
 				BaseDepth = tree.BaseDepth,
 				FovMultiplier = 0.2f,
 				FovConstant = 0.2f,

@@ -106,9 +106,17 @@ namespace SvoTracer.Kernel
 			HandleResultCode(resultCode, $"SetKernelArg:{kernelName}:{paramName}");
 		}
 
+		public void Wait(CLEvent waitEvent)
+		{
+			var resultCode = CL.WaitForEvents(new[] { waitEvent });
+			HandleResultCode(resultCode, $"WaitForEvents");
+		}
+
 		public void Wait(CLEvent[] waitEvents)
 		{
-			CL.WaitForEvents(waitEvents);
+			if (waitEvents == null) return;
+			var resultCode = CL.WaitForEvents(waitEvents);
+			HandleResultCode(resultCode, $"WaitForEvents");
 		}
 
 		#endregion
@@ -225,11 +233,10 @@ namespace SvoTracer.Kernel
 		{
 			var buffer = getBuffer(bufferName);
 			var output = new uint[1];
-			var resultCode = CL.EnqueueReadBuffer(_commandQueue, buffer, false, 0, output, initEvent, out CLEvent waitEvent);
+			var resultCode = CL.EnqueueReadBuffer(_commandQueue, buffer, false, 0, output, initEvent, out CLEvent readEvent);
 			HandleResultCode(resultCode, $"EnqueueReadBuffer:{bufferName}");
-			resultCode = CL.EnqueueWriteBuffer(_commandQueue, buffer, false, 0, new uint[] { 0 }, new[] { waitEvent }, out CLEvent finishEvent);
+			resultCode = CL.EnqueueWriteBuffer(_commandQueue, buffer, true, 0, new uint[] { 0 }, new[] { readEvent }, out CLEvent finishEvent);
 			HandleResultCode(resultCode, $"EnqueueWriteBuffer:{bufferName}");
-			CL.WaitForEvents(new[] { waitEvent });
 			return (output[0], finishEvent);
 		}
 
@@ -273,11 +280,6 @@ namespace SvoTracer.Kernel
 			HandleResultCode(resultCode, $"Flush");
 		}
 
-		public void WaitAll(IEnumerable<CLEvent> events)
-		{
-			CL.WaitForEvents((uint)events.Count(), events.ToArray());
-		}
-
 		public static void HandleResultCode(CLResultCode resultCode, string method)
 		{
 			if (resultCode != CLResultCode.Success)
@@ -291,13 +293,13 @@ namespace SvoTracer.Kernel
 				KernelName.Prune => "prune",
 				KernelName.Graft => "graft",
 				KernelName.Trace => "trace",
-				KernelName.Init => "Init",
-				KernelName.RunBaseTrace => "RunBaseTrace",
-				KernelName.RunBlockTrace => "RunBlockTrace",
-				KernelName.EvaluateBackground => "EvaluateBackground",
-				KernelName.EvaluateMaterial => "EvaluateMaterial",
-				KernelName.ResolveAccumulators => "ResolveAccumulators",
-				KernelName.DrawTrace => "DrawTrace",
+				KernelName.Init => "init",
+				KernelName.RunBaseTrace => "runBaseTrace",
+				KernelName.RunBlockTrace => "runBlockTrace",
+				KernelName.EvaluateBackground => "evaluateBackground",
+				KernelName.EvaluateMaterial => "evaluateMaterial",
+				KernelName.ResolveAccumulators => "resolveAccumulators",
+				KernelName.DrawTrace => "drawTrace",
 				_ => throw new Exception($"Kernel name {name} not found"),
 			};
 		}
@@ -317,19 +319,19 @@ namespace SvoTracer.Kernel
 					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "outputImage", "input" };
 					break;
 				case KernelName.Init:
-					paramList = new[] { "Origins", "Directions", "FoVs", "Locations", "Depths", "BaseTraceQueue", "BaseTraceQueueID", "input" };
+					paramList = new[] { "Origins", "Directions", "FoVs", "Locations", "Depths", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "input" };
 					break;
 				case KernelName.RunBaseTrace:
-					paramList = new[] { "Bases", "Origins", "Directions", "FoVs", "Locations", "Weightings", "Depths", "BaseTraces", "BlockTraces", "BlockTraceQueue", "BlockTraceQueueID", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "input" };
+					paramList = new[] { "Bases", "Origins", "Directions", "FoVs", "Locations", "Weightings", "Depths", "BaseTraces", "BlockTraceQueue", "BlockTraceQueueID", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "input" };
 					break;
 				case KernelName.RunBlockTrace:
-					paramList = new[] { "Blocks", "Usages", "ChildRequestID", "ChildRequests", "Origins", "Directions", "FoVs", "Locations", "Weightings", "Depths", "BlockTraces", "BlockTraceQueue", "BlockTraceQueueID", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "MaterialQueue", "MaterialQueueID", "input" };
+					paramList = new[] { "Blocks", "Usages", "ChildRequestID", "ChildRequests", "Origins", "Directions", "FoVs", "Locations", "Weightings", "Depths", "BlockTraces", "BlockTraceQueue", "BlockTraceQueueID", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "MaterialQueue", "MaterialQueueID", "ParentTraces", "input" };
 					break;
 				case KernelName.EvaluateBackground:
 					paramList = new[] { "Directions", "Weightings", "BackgroundQueue", "Luminosities", "ColourRs", "ColourGs", "ColourBs", "input" };
 					break;
 				case KernelName.EvaluateMaterial:
-					paramList = new[] { "Blocks", "Origins", "Directions", "FoVs", "Locations", "Depths", "Weightings", "ColourRs", "ColourGs", "ColourBs", "RayLengths", "Luminosities", "ParentTraces", "RootDirections", "RootLocations", "RootDepths", "RootWeightings", "RootParentTraces", "BaseTraceQueue", "AccumulatorID", "input" };
+					paramList = new[] { "Blocks", "Usages", "Origins", "Directions", "FoVs", "Locations", "Depths", "Weightings", "ColourRs", "ColourGs", "ColourBs", "RayLengths", "Luminosities", "MaterialQueue", "ParentTraces", "RootDirections", "RootLocations", "RootDepths", "RootWeightings", "RootParentTraces", "BaseTraceQueue", "BaseTraceQueueID", "FinalWeightings", "AccumulatorID", "input" };
 					break;
 				case KernelName.ResolveAccumulators:
 					paramList = new[] { "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "ColourRs", "ColourGs", "ColourBs", "Weightings", "Luminosities", "ParentTraces", "input" };

@@ -22,7 +22,7 @@ namespace SvoTracer.Window
 		#region //Local Variables
 		private uint parentMaxSize = 6000;
 		private uint blockCount = 0;
-		private int bufferSize = 1000000;
+		private int bufferSize = 4000000;
 		private bool initialized = false;
 
 		private readonly ComputeManager _computeManager;
@@ -141,9 +141,10 @@ namespace SvoTracer.Window
 
 			_computeManager.InitReadBuffer(BufferName.Bases, octree.BaseBlocks);
 			_computeManager.InitReadBuffer(BufferName.Blocks, octree.Blocks.Serialize());
-			_computeManager.InitReadBuffer(BufferName.Usages, usage.Serialize());
+			_computeManager.InitBuffer(BufferName.Usages, usage.Serialize());
 			_computeManager.InitBuffer(BufferName.ChildRequestID, new uint[1]);
 			_computeManager.InitBuffer(BufferName.ChildRequests, new byte[_stateManager.TraceInput.MaxChildRequestId * ChildRequest.Size]);
+
 			_computeManager.InitBuffer(BufferName.ParentSize, new uint[1]);
 			_computeManager.InitBuffer(BufferName.ParentResidency, new bool[parentMaxSize]);
 			_computeManager.InitBuffer(BufferName.Parents, new byte[parentMaxSize * Parent.Size]);
@@ -151,16 +152,6 @@ namespace SvoTracer.Window
 			_computeManager.InitBuffer(BufferName.DereferenceRemaining, new uint[1]);
 			_computeManager.InitBuffer(BufferName.Semaphor, new uint[1]);
 
-			// TraceData
-			//_computeManager.InitDeviceBuffer<float>(BufferName.Origins, Math.Max(Size.X * Size.Y, bufferSize) * 3);
-			//_computeManager.InitDeviceBuffer<float>(BufferName.Directions, Math.Max(Size.X * Size.Y, bufferSize) * 3);
-			//_computeManager.InitDeviceBuffer<float>(BufferName.FoVs, Math.Max(Size.X * Size.Y, bufferSize));
-			//_computeManager.InitDeviceBuffer<ulong>(BufferName.Locations, Math.Max(Size.X * Size.Y, bufferSize) * 3);
-			//_computeManager.InitDeviceBuffer<byte>(BufferName.Depths, Math.Max(Size.X * Size.Y, bufferSize));
-
-			//_computeManager.InitDeviceBuffer<float>(BufferName.RootDirections, Math.Max(Size.X * Size.Y, bufferSize) * 3);
-			//_computeManager.InitDeviceBuffer<ulong>(BufferName.RootLocations, Math.Max(Size.X * Size.Y, bufferSize) * 3);
-			//_computeManager.InitDeviceBuffer<byte>(BufferName.RootDepths, Math.Max(Size.X * Size.Y, bufferSize));
 			_computeManager.InitDeviceBuffer<uint>(BufferName.RootParentTraces, bufferSize);
 			_computeManager.InitDeviceBuffer<byte>(BufferName.RootWeightings, bufferSize);
 
@@ -170,19 +161,13 @@ namespace SvoTracer.Window
 			_computeManager.InitDeviceBuffer<byte>(BufferName.ColourBs, bufferSize);
 			_computeManager.InitDeviceBuffer<byte>(BufferName.Weightings, bufferSize);
 			// These might change depending on how we do light
-			_computeManager.InitDeviceBuffer<uint>(BufferName.Luminosities, bufferSize);
+			_computeManager.InitDeviceBuffer<byte>(BufferName.Luminosities, bufferSize);
 			_computeManager.InitDeviceBuffer<float>(BufferName.RayLengths, bufferSize);
 
-			// Draw data
-			//_computeManager.InitDeviceBuffer<uint>(BufferName.FinalColourRs, Size.X * Size.Y);
-			//_computeManager.InitDeviceBuffer<uint>(BufferName.FinalColourGs, Size.X * Size.Y);
-			//_computeManager.InitDeviceBuffer<uint>(BufferName.FinalColourBs, Size.X * Size.Y);
-			//_computeManager.InitDeviceBuffer<uint>(BufferName.FinalWeightings, Size.X * Size.Y);
-
 			_computeManager.InitDeviceBuffer<uint>(BufferName.BaseTraces, bufferSize);
-			_computeManager.InitDeviceBuffer<uint>(BufferName.BlockTraceQueue, bufferSize);
-			_computeManager.InitDeviceBuffer<uint>(BufferName.BlockTraces, bufferSize);
 			_computeManager.InitDeviceBuffer<uint>(BufferName.BaseTraceQueue, bufferSize);
+			_computeManager.InitDeviceBuffer<uint>(BufferName.BlockTraces, bufferSize);
+			_computeManager.InitDeviceBuffer<uint>(BufferName.BlockTraceQueue, bufferSize);
 			_computeManager.InitDeviceBuffer<uint>(BufferName.BackgroundQueue, bufferSize);
 			_computeManager.InitDeviceBuffer<uint>(BufferName.MaterialQueue, bufferSize);
 			_computeManager.InitBuffer(BufferName.BlockTraceQueueID, new uint[1]);
@@ -213,96 +198,6 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.Graft, "dereferenceQueue", BufferName.DereferenceQueue);
 			_computeManager.SetArg(KernelName.Graft, "dereferenceRemaining", BufferName.DereferenceRemaining);
 			_computeManager.SetArg(KernelName.Graft, "semaphor", BufferName.Semaphor);
-
-
-			//_computeManager.SetArg(KernelName.Init, "Origins", BufferName.Origins);
-			//_computeManager.SetArg(KernelName.Init, "Directions", BufferName.Directions);
-			//_computeManager.SetArg(KernelName.Init, "FoVs", BufferName.FoVs);
-			//_computeManager.SetArg(KernelName.Init, "Locations", BufferName.Locations);
-			//_computeManager.SetArg(KernelName.Init, "Depths", BufferName.Depths);
-			_computeManager.SetArg(KernelName.Init, "BaseTraceQueue", BufferName.BaseTraceQueue);
-			_computeManager.SetArg(KernelName.Init, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
-
-			_computeManager.SetArg(KernelName.RunBaseTrace, "Bases", BufferName.Bases);
-			//_computeManager.SetArg(KernelName.RunBaseTrace, "Origins", BufferName.Origins);
-			//_computeManager.SetArg(KernelName.RunBaseTrace, "Directions", BufferName.Directions);
-			//_computeManager.SetArg(KernelName.RunBaseTrace, "FoVs", BufferName.FoVs);
-			//_computeManager.SetArg(KernelName.RunBaseTrace, "Locations", BufferName.Locations);
-			//_computeManager.SetArg(KernelName.RunBaseTrace, "Weightings", BufferName.Weightings);
-			//_computeManager.SetArg(KernelName.RunBaseTrace, "Depths", BufferName.Depths);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "BaseTraces", BufferName.BaseTraces);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "BlockTraces", BufferName.BlockTraces);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "BlockTraceQueue", BufferName.BlockTraceQueue);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "BlockTraceQueueID", BufferName.BlockTraceQueueID);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "BaseTraceQueue", BufferName.BaseTraceQueue);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "BackgroundQueue", BufferName.BackgroundQueue);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "BackgroundQueueID", BufferName.BackgroundQueueID);
-
-			_computeManager.SetArg(KernelName.RunBlockTrace, "Blocks", BufferName.Blocks);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "Usages", BufferName.Usages);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "ChildRequestID", BufferName.ChildRequestID);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "ChildRequests", BufferName.ChildRequests);
-			//_computeManager.SetArg(KernelName.RunBlockTrace, "Origins", BufferName.Origins);
-			//_computeManager.SetArg(KernelName.RunBlockTrace, "Directions", BufferName.Directions);
-			//_computeManager.SetArg(KernelName.RunBlockTrace, "FoVs", BufferName.FoVs);
-			//_computeManager.SetArg(KernelName.RunBlockTrace, "Locations", BufferName.Locations);
-			//_computeManager.SetArg(KernelName.RunBlockTrace, "Weightings", BufferName.Weightings);
-			//_computeManager.SetArg(KernelName.RunBlockTrace, "Depths", BufferName.Depths);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "BlockTraces", BufferName.BlockTraces);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "BlockTraceQueue", BufferName.BlockTraceQueue);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "BlockTraceQueueID", BufferName.BlockTraceQueueID);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "BaseTraceQueue", BufferName.BaseTraceQueue);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "BackgroundQueue", BufferName.BackgroundQueue);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "BackgroundQueueID", BufferName.BackgroundQueueID);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "MaterialQueue", BufferName.MaterialQueue);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "MaterialQueueID", BufferName.MaterialQueueID);
-
-			//_computeManager.SetArg(KernelName.EvaluateBackground, "Directions", BufferName.Directions);
-			//_computeManager.SetArg(KernelName.EvaluateBackground, "Weightings", BufferName.Weightings);
-			_computeManager.SetArg(KernelName.EvaluateBackground, "BackgroundQueue", BufferName.BackgroundQueue);
-			_computeManager.SetArg(KernelName.EvaluateBackground, "Luminosities", BufferName.Luminosities);
-			_computeManager.SetArg(KernelName.EvaluateBackground, "ColourRs", BufferName.ColourRs);
-			_computeManager.SetArg(KernelName.EvaluateBackground, "ColourGs", BufferName.ColourGs);
-			_computeManager.SetArg(KernelName.EvaluateBackground, "ColourBs", BufferName.ColourBs);
-
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "Blocks", BufferName.Blocks);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "Origins", BufferName.Origins);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "Directions", BufferName.Directions);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "FoVs", BufferName.FoVs);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "Locations", BufferName.Locations);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "Weightings", BufferName.Weightings);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "Depths", BufferName.Depths);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "ColourRs", BufferName.ColourRs);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "ColourGs", BufferName.ColourGs);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "ColourBs", BufferName.ColourBs);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "RayLengths", BufferName.RayLengths);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "Luminosities", BufferName.Luminosities);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "ParentTraces", BufferName.ParentTraces);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "RootDirections", BufferName.RootDirections);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "RootLocations", BufferName.RootLocations);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "RootDepths", BufferName.RootDepths);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "RootWeightings", BufferName.RootWeightings);
-			//_computeManager.SetArg(KernelName.EvaluateMaterial, "RootParentTraces", BufferName.RootParentTraces);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "BaseTraceQueue", BufferName.BaseTraceQueue);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "AccumulatorID", BufferName.AccumulatorID);
-
-			//_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourRs", BufferName.FinalColourRs);
-			//_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourGs", BufferName.FinalColourGs);
-			//_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourBs", BufferName.FinalColourBs);
-			//_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalWeightings", BufferName.FinalWeightings);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "ColourRs", BufferName.ColourRs);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "ColourGs", BufferName.ColourGs);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "ColourBs", BufferName.ColourBs);
-			//_computeManager.SetArg(KernelName.ResolveAccumulators, "Weightings", BufferName.Weightings);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "Luminosities", BufferName.Luminosities);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "ParentTraces", BufferName.ParentTraces);
-
-			//_computeManager.SetArg(KernelName.DrawTrace, "FinalColourRs", BufferName.FinalColourRs);
-			//_computeManager.SetArg(KernelName.DrawTrace, "FinalColourGs", BufferName.FinalColourGs);
-			//_computeManager.SetArg(KernelName.DrawTrace, "FinalColourBs", BufferName.FinalColourBs);
-			//_computeManager.SetArg(KernelName.DrawTrace, "FinalWeightings", BufferName.FinalWeightings);
 		}
 
 		#endregion
@@ -371,35 +266,6 @@ namespace SvoTracer.Window
 			_computeManager.InitDeviceBuffer<uint>(BufferName.FinalColourGs, Size.X * Size.Y);
 			_computeManager.InitDeviceBuffer<uint>(BufferName.FinalColourBs, Size.X * Size.Y);
 			_computeManager.InitDeviceBuffer<uint>(BufferName.FinalWeightings, Size.X * Size.Y);
-
-
-			_computeManager.SetArg(KernelName.Init, "Origins", BufferName.Origins);
-			_computeManager.SetArg(KernelName.Init, "Directions", BufferName.Directions);
-			_computeManager.SetArg(KernelName.Init, "FoVs", BufferName.FoVs);
-			_computeManager.SetArg(KernelName.Init, "Locations", BufferName.Locations);
-			_computeManager.SetArg(KernelName.Init, "Depths", BufferName.Depths);
-
-			_computeManager.SetArg(KernelName.RunBaseTrace, "Origins", BufferName.Origins);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "Directions", BufferName.Directions);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "FoVs", BufferName.FoVs);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "Locations", BufferName.Locations);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "Depths", BufferName.Depths);
-
-			_computeManager.SetArg(KernelName.RunBlockTrace, "Origins", BufferName.Origins);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "Directions", BufferName.Directions);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "FoVs", BufferName.FoVs);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "Locations", BufferName.Locations);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "Depths", BufferName.Depths);
-
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourRs", BufferName.FinalColourRs);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourGs", BufferName.FinalColourGs);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourBs", BufferName.FinalColourBs);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalWeightings", BufferName.FinalWeightings);
-
-			_computeManager.SetArg(KernelName.DrawTrace, "FinalColourRs", BufferName.FinalColourRs);
-			_computeManager.SetArg(KernelName.DrawTrace, "FinalColourGs", BufferName.FinalColourGs);
-			_computeManager.SetArg(KernelName.DrawTrace, "FinalColourBs", BufferName.FinalColourBs);
-			_computeManager.SetArg(KernelName.DrawTrace, "FinalWeightings", BufferName.FinalWeightings);
 		}
 
 		#endregion
@@ -509,17 +375,13 @@ namespace SvoTracer.Window
 			// Copy the struct so that changing the DoF later doesn't update the original
 			var traceInput = _stateManager.TraceInput;
 			var input = traceInput.Serialize();
-			_computeManager.SetArg(KernelName.Init, "input", input);
-			_computeManager.SetArg(KernelName.RunBaseTrace, "input", input);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "input", input);
-			_computeManager.SetArg(KernelName.EvaluateBackground, "input", input);
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "input", input);
-			_computeManager.SetArg(KernelName.ResolveAccumulators, "input", input);
-			_computeManager.SetArg(KernelName.DrawTrace, "input", input);
-
 
 			// trace initial rays
-			var initEvent = _computeManager.Enqueue(KernelName.Init, new[] { (nuint)Size.X, (nuint)Size.Y }, waitList);
+			_computeManager.SetArg(KernelName.Init, "input", input);
+			OpenTK.Compute.OpenCL.CLEvent initEvent = init(waitList);
+
+			_computeManager.SetArg(KernelName.RunBaseTrace, "input", input);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "input", input);
 			runTraces(initEvent);
 
 			traceInput.DoF = Vector2.Zero;
@@ -528,6 +390,7 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.RunBlockTrace, "input", input);
 
 			// trace material rays
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "input", input);
 			var evaluateMaterialEvent = evaulateMaterial(null);
 			runTraces(evaluateMaterialEvent);
 
@@ -536,83 +399,203 @@ namespace SvoTracer.Window
 			// runTraces(evaluateMaterialEvent);
 
 			// resolve background illumination
+			_computeManager.SetArg(KernelName.EvaluateBackground, "input", input);
 			var backgroundEvent = evaulateBackground(null);
-			var (accumulatorSize, resetAccumulatorEvent) = _computeManager.ResetIDBuffer(BufferName.AccumulatorID, new[] { backgroundEvent });
-			var accumulatorEvent = _computeManager.Enqueue(KernelName.ResolveAccumulators, new[] { (nuint)accumulatorSize }, new[] { resetAccumulatorEvent });
+
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "input", input);
+			var accumulatorEvent = resolveAccumulators(new[] { backgroundEvent });
 
 			//Flush child request buffer
 			var (renderbuffer, acquireBufferEvent) = _computeManager.AcquireRenderbuffer();
 			_computeManager.SetArg(KernelName.DrawTrace, "outputImage", renderbuffer);
+			_computeManager.SetArg(KernelName.DrawTrace, "input", input);
+			var drawEvent = drawTrace(new[] { acquireBufferEvent, accumulatorEvent });
 
-			var drawEvent = _computeManager.Enqueue(KernelName.DrawTrace, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { acquireBufferEvent, accumulatorEvent });
 			_computeManager.ReleaseRenderbuffer(new[] { drawEvent });
 			_computeManager.Flush();
 			timer.Stop();
 			Console.Write("\r{0}", 1000.0f / timer.ElapsedMilliseconds);
 		}
 
-		private void runTraces(OpenTK.Compute.OpenCL.CLEvent blockTraceEvent)
+		private OpenTK.Compute.OpenCL.CLEvent init(OpenTK.Compute.OpenCL.CLEvent[] waitList)
 		{
-			OpenTK.Compute.OpenCL.CLEvent baseTraceEvent;
-			bool baseTraceRan, blockTraceRan, tracesRemain = true;
+			_computeManager.SetArg(KernelName.Init, "Origins", BufferName.Origins);
+			_computeManager.SetArg(KernelName.Init, "Directions", BufferName.Directions);
+			_computeManager.SetArg(KernelName.Init, "FoVs", BufferName.FoVs);
+			_computeManager.SetArg(KernelName.Init, "Locations", BufferName.Locations);
+			_computeManager.SetArg(KernelName.Init, "Depths", BufferName.Depths);
+			_computeManager.SetArg(KernelName.Init, "BaseTraceQueue", BufferName.BaseTraceQueue);
+			_computeManager.SetArg(KernelName.Init, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
+			_computeManager.SetArg(KernelName.Init, "BackgroundQueue", BufferName.BackgroundQueue);
+			_computeManager.SetArg(KernelName.Init, "BackgroundQueueID", BufferName.BackgroundQueueID);
+
+			var initEvent = _computeManager.Enqueue(KernelName.Init, new[] { (nuint)Size.X, (nuint)Size.Y }, waitList);
+			return initEvent;
+		}
+
+		private void runTraces(OpenTK.Compute.OpenCL.CLEvent initialEvent)
+		{
+			OpenTK.Compute.OpenCL.CLEvent resetBaseTraceEvent;
+			OpenTK.Compute.OpenCL.CLEvent baseTraceEvent = OpenTK.Compute.OpenCL.CLEvent.Zero;
+			OpenTK.Compute.OpenCL.CLEvent resetBlockTraceEvent = initialEvent;
+			OpenTK.Compute.OpenCL.CLEvent blockTraceEvent = OpenTK.Compute.OpenCL.CLEvent.Zero;
+			bool baseTraceRan;
+			bool blockTraceRan = false;
+			bool tracesRemain = true;
+			uint baseTraceSize, blockTraceSize;
 			while (tracesRemain)
 			{
-				(baseTraceRan, baseTraceEvent) = runBaseTrace(new[] { blockTraceEvent });
-				(blockTraceRan, blockTraceEvent) = runBlockTrace(new[] { baseTraceEvent });
+				(baseTraceSize, resetBaseTraceEvent) = _computeManager.ResetIDBuffer(BufferName.BaseTraceQueueID, new[] { blockTraceRan ? blockTraceEvent : resetBlockTraceEvent });
+				if (baseTraceSize > 0)
+				{
+					baseTraceEvent = runBaseTrace(baseTraceSize, new[]{ resetBaseTraceEvent });
+					baseTraceRan = true;
+				}
+				else baseTraceRan = false;
+
+				(blockTraceSize, resetBlockTraceEvent) = _computeManager.ResetIDBuffer(BufferName.BlockTraceQueueID, new[] { baseTraceRan ? baseTraceEvent : resetBaseTraceEvent });
+				if (blockTraceSize > 0)
+				{
+					blockTraceEvent = runBlockTrace(blockTraceSize, new[] { resetBlockTraceEvent });
+					blockTraceRan = true;
+				}
+				else blockTraceRan = false;
 				tracesRemain = baseTraceRan || blockTraceRan;
 			}
 		}
 
-		private (bool, OpenTK.Compute.OpenCL.CLEvent) runBaseTrace(OpenTK.Compute.OpenCL.CLEvent[] initEvent)
+		private OpenTK.Compute.OpenCL.CLEvent runBaseTrace(uint baseTraceSize, OpenTK.Compute.OpenCL.CLEvent[] waitEvents)
 		{
-			var (baseTraceSize, resetBaseTraceEvent) = _computeManager.ResetIDBuffer(BufferName.BaseTraceQueueID, initEvent);
-			if (baseTraceSize == 0) return (false, resetBaseTraceEvent);
 			_computeManager.Swap(BufferName.BaseTraces, BufferName.BaseTraceQueue);
+
+			_computeManager.SetArg(KernelName.RunBaseTrace, "Bases", BufferName.Bases);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "Origins", BufferName.Origins);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "Directions", BufferName.Directions);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "FoVs", BufferName.FoVs);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "Locations", BufferName.Locations);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "Weightings", BufferName.Weightings);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "Depths", BufferName.Depths);
 			_computeManager.SetArg(KernelName.RunBaseTrace, "BaseTraces", BufferName.BaseTraces);
 			_computeManager.SetArg(KernelName.RunBaseTrace, "BaseTraceQueue", BufferName.BaseTraceQueue);
-			return (true, _computeManager.Enqueue(KernelName.RunBaseTrace, new[] { (nuint)baseTraceSize }, new[] { resetBaseTraceEvent }));
+			_computeManager.SetArg(KernelName.RunBaseTrace, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "BlockTraceQueue", BufferName.BlockTraceQueue);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "BlockTraceQueueID", BufferName.BlockTraceQueueID);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "BackgroundQueue", BufferName.BackgroundQueue);
+			_computeManager.SetArg(KernelName.RunBaseTrace, "BackgroundQueueID", BufferName.BackgroundQueueID);
+
+			return _computeManager.Enqueue(KernelName.RunBaseTrace, new[] { (nuint)baseTraceSize }, waitEvents);
 		}
 
-		private (bool, OpenTK.Compute.OpenCL.CLEvent) runBlockTrace(OpenTK.Compute.OpenCL.CLEvent[] initEvent)
+		private OpenTK.Compute.OpenCL.CLEvent runBlockTrace(uint blockTraceSize, OpenTK.Compute.OpenCL.CLEvent[] waitEvents)
 		{
-			var (blockTraceSize, resetBlockTraceEvent) = _computeManager.ResetIDBuffer(BufferName.BlockTraceQueueID, initEvent);
-			if (blockTraceSize == 0) return (false, resetBlockTraceEvent);
 			_computeManager.Swap(BufferName.BlockTraces, BufferName.BlockTraceQueue);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "BaseTraces", BufferName.BaseTraces);
+
+			_computeManager.SetArg(KernelName.RunBlockTrace, "Blocks", BufferName.Blocks);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "Usages", BufferName.Usages);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "ChildRequestID", BufferName.ChildRequestID);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "ChildRequests", BufferName.ChildRequests);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "Origins", BufferName.Origins);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "Directions", BufferName.Directions);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "FoVs", BufferName.FoVs);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "Locations", BufferName.Locations);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "Weightings", BufferName.Weightings);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "Depths", BufferName.Depths);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "BlockTraces", BufferName.BlockTraces);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "BlockTraceQueue", BufferName.BlockTraceQueue);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "BlockTraceQueueID", BufferName.BlockTraceQueueID);
 			_computeManager.SetArg(KernelName.RunBlockTrace, "BaseTraceQueue", BufferName.BaseTraceQueue);
-			return (true, _computeManager.Enqueue(KernelName.RunBlockTrace, new[] { (nuint)blockTraceSize }, new[] { resetBlockTraceEvent }));
+			_computeManager.SetArg(KernelName.RunBlockTrace, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "BackgroundQueue", BufferName.BackgroundQueue);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "BackgroundQueueID", BufferName.BackgroundQueueID);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "MaterialQueue", BufferName.MaterialQueue);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "MaterialQueueID", BufferName.MaterialQueueID);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "ParentTraces", BufferName.ParentTraces);
+
+			return _computeManager.Enqueue(KernelName.RunBlockTrace, new[] { (nuint)blockTraceSize }, waitEvents);
 		}
 
-		private OpenTK.Compute.OpenCL.CLEvent evaulateMaterial(OpenTK.Compute.OpenCL.CLEvent[] initEvent)
+		private OpenTK.Compute.OpenCL.CLEvent evaulateMaterial(OpenTK.Compute.OpenCL.CLEvent[] waitList)
 		{
+			var (materialQueueSize, materialQueueEvent) = _computeManager.ResetIDBuffer(BufferName.MaterialQueueID, waitList);
+			if (materialQueueSize == 0) return materialQueueEvent;
+
 			_computeManager.Swap(BufferName.RootDirections, BufferName.Directions);
 			_computeManager.Swap(BufferName.RootLocations, BufferName.Locations);
 			_computeManager.Swap(BufferName.RootDepths, BufferName.Depths);
 			_computeManager.Swap(BufferName.RootWeightings, BufferName.Weightings);
 			_computeManager.Swap(BufferName.RootParentTraces, BufferName.ParentTraces);
 
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "Blocks", BufferName.Blocks);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "Usages", BufferName.Usages);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "Origins", BufferName.Origins);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "Directions", BufferName.Directions);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "FoVs", BufferName.FoVs);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "Locations", BufferName.Locations);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "Depths", BufferName.Depths);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "Weightings", BufferName.Weightings);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "ColourRs", BufferName.ColourRs);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "ColourGs", BufferName.ColourGs);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "ColourBs", BufferName.ColourBs);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "RayLengths", BufferName.RayLengths);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "Luminosities", BufferName.Luminosities);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "MaterialQueue", BufferName.MaterialQueue);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "ParentTraces", BufferName.ParentTraces);
-
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "RootDirections", BufferName.RootDirections);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "RootLocations", BufferName.RootLocations);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "RootDepths", BufferName.RootDepths);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "RootWeightings", BufferName.RootWeightings);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "RootParentTraces", BufferName.RootParentTraces);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "BaseTraceQueue", BufferName.BaseTraceQueue);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "FinalWeightings", BufferName.FinalWeightings);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "AccumulatorID", BufferName.AccumulatorID);
 
-			var (materialQueueSize, materialQueueEvent) = _computeManager.ResetIDBuffer(BufferName.MaterialQueueID, initEvent);
-			if (materialQueueSize == 0) return materialQueueEvent;
 			return _computeManager.Enqueue(KernelName.EvaluateMaterial, new[] { (nuint)materialQueueSize }, new[] { materialQueueEvent });
 		}
 
-		private OpenTK.Compute.OpenCL.CLEvent evaulateBackground(OpenTK.Compute.OpenCL.CLEvent[] initEvent)
+		private OpenTK.Compute.OpenCL.CLEvent evaulateBackground(OpenTK.Compute.OpenCL.CLEvent[] waitList)
 		{
-			var (backgroundQueueSize, backgroundQueueEvent) = _computeManager.ResetIDBuffer(BufferName.BackgroundQueueID, initEvent);
+			var (backgroundQueueSize, backgroundQueueEvent) = _computeManager.ResetIDBuffer(BufferName.BackgroundQueueID, waitList);
 			if (backgroundQueueSize == 0) return backgroundQueueEvent;
+
+			_computeManager.SetArg(KernelName.EvaluateBackground, "Directions", BufferName.Directions);
+			_computeManager.SetArg(KernelName.EvaluateBackground, "Weightings", BufferName.Weightings);
+			_computeManager.SetArg(KernelName.EvaluateBackground, "BackgroundQueue", BufferName.BackgroundQueue);
+			_computeManager.SetArg(KernelName.EvaluateBackground, "Luminosities", BufferName.Luminosities);
+			_computeManager.SetArg(KernelName.EvaluateBackground, "ColourRs", BufferName.ColourRs);
+			_computeManager.SetArg(KernelName.EvaluateBackground, "ColourGs", BufferName.ColourGs);
+			_computeManager.SetArg(KernelName.EvaluateBackground, "ColourBs", BufferName.ColourBs);
+
 			return _computeManager.Enqueue(KernelName.EvaluateBackground, new[] { (nuint)backgroundQueueSize }, new[] { backgroundQueueEvent });
+		}
+
+		private OpenTK.Compute.OpenCL.CLEvent resolveAccumulators(OpenTK.Compute.OpenCL.CLEvent[] waitList)
+		{
+			var (accumulatorSize, resetAccumulatorEvent) = _computeManager.ResetIDBuffer(BufferName.AccumulatorID, waitList);
+
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourRs", BufferName.FinalColourRs);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourGs", BufferName.FinalColourGs);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalColourBs", BufferName.FinalColourBs);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "FinalWeightings", BufferName.FinalWeightings);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "ColourRs", BufferName.ColourRs);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "ColourGs", BufferName.ColourGs);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "ColourBs", BufferName.ColourBs);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "Weightings", BufferName.Weightings);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "Luminosities", BufferName.Luminosities);
+			_computeManager.SetArg(KernelName.ResolveAccumulators, "ParentTraces", BufferName.ParentTraces);
+
+			var accumulatorEvent = _computeManager.Enqueue(KernelName.ResolveAccumulators, new[] { (nuint)accumulatorSize }, new[] { resetAccumulatorEvent });
+			return accumulatorEvent;
+		}
+
+		private OpenTK.Compute.OpenCL.CLEvent drawTrace(OpenTK.Compute.OpenCL.CLEvent[] waitList)
+		{
+			_computeManager.SetArg(KernelName.DrawTrace, "FinalColourRs", BufferName.FinalColourRs);
+			_computeManager.SetArg(KernelName.DrawTrace, "FinalColourGs", BufferName.FinalColourGs);
+			_computeManager.SetArg(KernelName.DrawTrace, "FinalColourBs", BufferName.FinalColourBs);
+			_computeManager.SetArg(KernelName.DrawTrace, "FinalWeightings", BufferName.FinalWeightings);
+			var drawEvent = _computeManager.Enqueue(KernelName.DrawTrace, new[] { (nuint)Size.X, (nuint)Size.Y }, waitList);
+			return drawEvent;
 		}
 
 		#endregion
