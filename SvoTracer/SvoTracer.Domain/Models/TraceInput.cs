@@ -20,7 +20,8 @@ namespace SvoTracer.Domain.Models
 			float fovMultiplier,
 			float fovConstant,
 			float weightingMultiplier,
-			float weightingConstant)
+			float weightingConstant,
+			byte ambientLightLevel)
 		{
 			Origin = origin;
 			Facing = facing;
@@ -35,6 +36,7 @@ namespace SvoTracer.Domain.Models
 			FovConstant = fovConstant;
 			WeightingMultiplier = weightingMultiplier;
 			WeightingConstant = weightingConstant;
+			AmbientLightLevel = ambientLightLevel;
 		}
 
 		//Position
@@ -56,5 +58,6 @@ namespace SvoTracer.Domain.Models
 		public float FovConstant;
 		public float WeightingMultiplier;
 		public float WeightingConstant;
+		public byte AmbientLightLevel;
 	}
 }

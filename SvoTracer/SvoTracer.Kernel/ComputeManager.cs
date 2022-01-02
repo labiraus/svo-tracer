@@ -296,9 +296,9 @@ namespace SvoTracer.Kernel
 				KernelName.Init => "init",
 				KernelName.RunBaseTrace => "runBaseTrace",
 				KernelName.RunBlockTrace => "runBlockTrace",
-				KernelName.EvaluateBackground => "evaluateBackground",
 				KernelName.EvaluateMaterial => "evaluateMaterial",
-				KernelName.ResolveAccumulators => "resolveAccumulators",
+				KernelName.EvaluateBackground => "evaluateBackground",
+				KernelName.ResolveRemainders => "resolveRemainders",
 				KernelName.DrawTrace => "drawTrace",
 				_ => throw new Exception($"Kernel name {name} not found"),
 			};
@@ -327,14 +327,14 @@ namespace SvoTracer.Kernel
 				case KernelName.RunBlockTrace:
 					paramList = new[] { "Blocks", "Usages", "ChildRequestID", "ChildRequests", "Origins", "Directions", "FoVs", "Locations", "Weightings", "Depths", "BlockTraces", "BlockTraceQueue", "BlockTraceQueueID", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "MaterialQueue", "MaterialQueueID", "ParentTraces", "input" };
 					break;
-				case KernelName.EvaluateBackground:
-					paramList = new[] { "Directions", "Weightings", "BackgroundQueue", "Luminosities", "ColourRs", "ColourGs", "ColourBs", "input" };
-					break;
 				case KernelName.EvaluateMaterial:
 					paramList = new[] { "Blocks", "Usages", "Origins", "Directions", "FoVs", "Locations", "Depths", "Weightings", "ColourRs", "ColourGs", "ColourBs", "RayLengths", "Luminosities", "MaterialQueue", "ParentTraces", "RootDirections", "RootLocations", "RootDepths", "RootWeightings", "RootParentTraces", "BaseTraceQueue", "BaseTraceQueueID", "FinalWeightings", "AccumulatorID", "input" };
 					break;
-				case KernelName.ResolveAccumulators:
-					paramList = new[] { "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "ColourRs", "ColourGs", "ColourBs", "Weightings", "Luminosities", "ParentTraces", "input" };
+				case KernelName.EvaluateBackground:
+					paramList = new[] { "BackgroundQueue", "Directions", "ParentTraces", "ColourRs", "ColourGs", "ColourBs", "Weightings", "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "input" };
+					break;
+				case KernelName.ResolveRemainders:
+					paramList = new[] { "MaterialQueue", "FinalWeightings", "Weightings", "ParentTraces", "input" };
 					break;
 				case KernelName.DrawTrace:
 					paramList = new[] { "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "outputImage", "input" };

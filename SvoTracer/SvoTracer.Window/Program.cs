@@ -47,10 +47,10 @@ namespace SvoTracer.Window
 
 			var input = new TraceInput()
 			{
-				//Origin = new(-2f, 0.5f, 0.5f),
-				//Facing = Matrix3.Identity,
-				Origin = new(0.6223052f, 0.67926204f, 0.6145233f),
-				Facing = new(0.96893793f, 0.24715249f, 0.008649882f, -0.24716175f, 0.96897423f, 0.0f, -0.008381513f, -0.00213792f, 0.99996257f),
+				Origin = new(-2f, 0.5f, 0.5f),
+				Facing = Matrix3.Identity,
+				//Origin = new(0.6223052f, 0.67926204f, 0.6145233f),
+				//Facing = new(0.96893793f, 0.24715249f, 0.008649882f, -0.24716175f, 0.96897423f, 0.0f, -0.008381513f, -0.00213792f, 0.99996257f),
 				FoV = new((float)Math.PI / 4f, (float)Math.PI / 4f),
 				DoF = new(0, 0),
 				MaxOpacity = 200,
@@ -59,7 +59,8 @@ namespace SvoTracer.Window
 				FovMultiplier = 0.2f,
 				FovConstant = 0.2f,
 				WeightingMultiplier = -0.05f,
-				WeightingConstant = 0.5f
+				WeightingConstant = 0.5f,
+				AmbientLightLevel = 100,
 			};
 
 			//new TestRun(tree).Run(input);

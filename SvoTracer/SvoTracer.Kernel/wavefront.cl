@@ -72,7 +72,6 @@ typedef struct {
   float WeightingMultiplier;
   float WeightingConstant;
   uchar AmbientLightLevel;
-  uchar BounceNumber;
 } TraceInput;
 
 typedef struct {
@@ -168,7 +167,6 @@ void updateTrace(Buffers buffers, TraceData trace);
 void requestChild(Buffers buffers, ChildRequest request);
 ChildRequest buildChildRequest(uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location);
 void updateUsage(Buffers buffers, uint address, ushort tick);
-void meldColour(Buffers buffers, uint traceID, uchar weighting, uchar colourR, uchar colourG, uchar colourB, uchar luminosity);
 
 // Tree
 float coneSize(float m, TraceData trace);
@@ -362,23 +360,6 @@ void updateUsage(Buffers buffers, uint address, ushort tick) {
   Usage usageVal = buffers.Usages[address];
   if (usageVal.Tick < USHRT_MAX - 1 && usageVal.Tick != tick)
     buffers.Usages[address].Tick = tick;
-}
-
-void meldColour(Buffers buffers, uint traceID, uchar weighting, uchar colourR, uchar colourG, uchar colourB, uchar luminosity) {
-  // colourBoundary determines whether we are increasing or decreasing colour level
-  uint colourBoundary = 0;
-  if (luminosity > buffers.AmbientLightLevel)
-    colourBoundary = 255;
-  // lightQuotient is the fraction that you'd increase colour by under white light, 0 = ambient light level
-  float lightQuotient = native_divide((float)abs_diff(luminosity, buffers.AmbientLightLevel), (luminosity + buffers.AmbientLightLevel) * 255.0f);
-
-  uchar baseColourR = buffers.ColourRs[traceID];
-  buffers.ColourRs[traceID] = (baseColourR + lightQuotient * colourR * (colourBoundary - baseColourR)) * weighting;
-  uchar baseColourG = buffers.ColourGs[traceID];
-  buffers.ColourGs[traceID] = (baseColourG + lightQuotient * colourG * (colourBoundary - baseColourG)) * weighting;
-  uchar baseColourB = buffers.ColourBs[traceID];
-  buffers.ColourBs[traceID] = (baseColourB + lightQuotient * colourB * (colourBoundary - baseColourB)) * weighting;
-  buffers.Luminosities[traceID] = luminosity;
 }
 
 // Tree
@@ -1484,43 +1465,12 @@ kernel void runBlockTrace(global Block *Blocks, global Usage *Usages, global uin
   updateTrace(buffers, trace);
 }
 
-kernel void evaluateBackground(global float3 *Directions, global uchar *Weightings, global uint *BackgroundQueue, global uchar *Luminosities,
-                               global uchar *ColourRs, global uchar *ColourGs, global uchar *ColourBs, TraceInput input) {
-  Buffers buffers = {.Weightings = Weightings,
-                     .ColourRs = ColourRs,
-                     .ColourGs = ColourGs,
-                     .ColourBs = ColourBs,
-                     .Luminosities = Luminosities,
-                     .AmbientLightLevel = input.AmbientLightLevel};
-  uint traceID = BackgroundQueue[get_global_id(0)];
-  float dotprod = dot(Directions[traceID], (float3)(0, 0, -1));
-  uchar colourR;
-  uchar colourG;
-  uchar colourB;
-  uchar luminosity;
-
-  if (dotprod > 0.8) {
-    colourR = 255;
-    colourG = 255;
-    colourB = 255;
-    luminosity = (uchar)(dotprod * 200.0f);
-  } else {
-    colourR = 135;
-    colourG = 206;
-    colourB = 235;
-    luminosity = 100;
-  }
-
-  uchar weighting = buffers.Weightings[traceID];
-  meldColour(buffers, traceID, weighting, colourR, colourG, colourB, luminosity);
-}
-
 kernel void evaluateMaterial(global Block *Blocks, global Usage *Usages, global float3 *Origins, global float3 *Directions, global float *FoVs,
                              global ulong3 *Locations, global uchar *Depths, global uchar *Weightings, global uchar *ColourRs, global uchar *ColourGs,
-                             global uchar *ColourBs, global float *RayLengths, global uchar *Luminosities, global uint *MaterialQueue, global uint *ParentTraces,
-                             global float3 *RootDirections, global ulong3 *RootLocations, global uchar *RootDepths, global uchar *RootWeightings,
-                             global uint *RootParentTraces, global uint *BaseTraceQueue, global uint *BaseTraceQueueID, global uint *FinalWeightings,
-                             global uint *AccumulatorID, TraceInput input) {
+                             global uchar *ColourBs, global float *RayLengths, global uchar *Luminosities, global uint *MaterialQueue,
+                             global uint *ParentTraces, global float3 *RootDirections, global ulong3 *RootLocations, global uchar *RootDepths,
+                             global uchar *RootWeightings, global uint *RootParentTraces, global uint *BaseTraceQueue, global uint *BaseTraceQueueID,
+                             global uint *FinalWeightings, global uint *AccumulatorID, TraceInput input) {
   if (input.FovConstant <= 0 || input.FovMultiplier >= 1 || input.FovMultiplier <= -1)
     return;
   Buffers buffers = {.Blocks = Blocks,
@@ -1672,33 +1622,81 @@ kernel void evaluateMaterial(global Block *Blocks, global Usage *Usages, global 
   }
 }
 
-kernel void resolveAccumulators(global uint *FinalColourRs, global uint *FinalColourGs, global uint *FinalColourBs, global uint *FinalWeightings,
-                                global uchar *ColourRs, global uchar *ColourGs, global uchar *ColourBs, global uchar *Weightings,
-                                global uchar *Luminosities, global uint *ParentTraces, TraceInput input) {
-  uchar ambientLightLevel = 100;
-  uint accumulatorID = get_global_id(0);
-  uint parentID = ParentTraces[accumulatorID];
-  uint weighting = Weightings[accumulatorID];
-  uint luminosity = Luminosities[accumulatorID];
+kernel void evaluateBackground(global uint *BackgroundQueue, global float3 *Directions, global uint *ParentTraces, global uchar *ColourRs,
+                               global uchar *ColourGs, global uchar *ColourBs, global uchar *Weightings, global uint *FinalColourRs,
+                               global uint *FinalColourGs, global uint *FinalColourBs, global uint *FinalWeightings, TraceInput input) {
+  Buffers buffers = {.Weightings = Weightings,
+                     .ParentTraces = ParentTraces,
+                     .ColourRs = ColourRs,
+                     .ColourGs = ColourGs,
+                     .ColourBs = ColourBs,
+                     .AmbientLightLevel = input.AmbientLightLevel};
+  uint traceID = BackgroundQueue[get_global_id(0)];
+  uint parentID = ParentTraces[traceID];
+  float dotprod = dot(Directions[traceID], (float3)(0, 0, -1));
+  uchar colourR;
+  uchar colourG;
+  uchar colourB;
+  uchar luminosity;
+
+  if (dotprod > 0.8) {
+    colourR = 255;
+    colourG = 255;
+    colourB = 255;
+    luminosity = (uchar)(dotprod * 200.0f);
+  } else {
+    colourR = 135;
+    colourG = 206;
+    colourB = 235;
+    luminosity = 100;
+  }
+
+  uchar weighting = Weightings[traceID];
+
+  uint colourBoundary = 0;
+  if (luminosity > input.AmbientLightLevel)
+    colourBoundary = 255;
+  // lightQuotient is the fraction that you'd increase colour by under white light, 0 = ambient light level
+  float lightQuotient = native_divide((float)abs_diff(luminosity, buffers.AmbientLightLevel), (luminosity + buffers.AmbientLightLevel) * 255.0f);
+
+  // uchar baseColourR = buffers.ColourRs[traceID];
+  // uchar baseColourG = buffers.ColourGs[traceID];
+  // uchar baseColourB = buffers.ColourBs[traceID];
+
+  // buffers.ColourRs[traceID] = (baseColourR + lightQuotient * colourR * (colourBoundary - baseColourR));
+  // buffers.ColourGs[traceID] = (baseColourG + lightQuotient * colourG * (colourBoundary - baseColourG));
+  // buffers.ColourBs[traceID] = (baseColourB + lightQuotient * colourB * (colourBoundary - baseColourB));
+  colourR = 150;
+  colourG = 100;
+  colourB = 250;
 
   atomic_add(&FinalWeightings[parentID], weighting);
 
   if (luminosity > 0) {
-    atomic_add(&FinalColourRs[parentID], ColourRs[accumulatorID]);
-    atomic_add(&FinalColourGs[parentID], ColourGs[accumulatorID]);
-    atomic_add(&FinalColourBs[parentID], ColourBs[accumulatorID]);
+    atomic_add(&FinalColourRs[parentID], colourR * weighting);
+    atomic_add(&FinalColourGs[parentID], colourG * weighting);
+    atomic_add(&FinalColourBs[parentID], colourB * weighting);
   }
+}
+
+kernel void resolveRemainders(global uint *MaterialQueue, global uint *FinalWeightings, global uchar *Weightings, global uint *ParentTraces,
+                              TraceInput input) {
+  uint traceID = MaterialQueue[get_global_id(0)];
+  uint parentID = ParentTraces[traceID];
+  uint weighting = Weightings[traceID];
+
+  atomic_add(&FinalWeightings[parentID], weighting);
 }
 
 kernel void drawTrace(global uint *FinalColourRs, global uint *FinalColourGs, global uint *FinalColourBs, global uint *FinalWeightings,
                       __write_only image2d_t outputImage, TraceInput input) {
   uint traceID = get_global_id(0) + get_global_id(1) * input.ScreenSize.x;
   int2 coord = (int2)((int)get_global_id(0), (int)get_global_id(1));
-  uint finalWeighting = FinalWeightings[traceID];
+  float finalWeighting = (float)FinalWeightings[traceID] * 255.0f;
 
   // Drawn colour is final colour / final weighting * 255
   write_imagef(outputImage, coord,
-               (float4)(fmin(native_divide(FinalColourRs[traceID], finalWeighting * 255.0f), 1),
-                        fmin(native_divide(FinalColourRs[traceID], finalWeighting * 255.0f), 1),
-                        fmin(native_divide(FinalColourRs[traceID], finalWeighting * 255.0f), 1), 1));
+               (float4)(fmin(native_divide((float)FinalColourRs[traceID], finalWeighting), 1),
+                        fmin(native_divide((float)FinalColourGs[traceID], finalWeighting), 0.9f),
+                        fmin(native_divide((float)FinalColourBs[traceID], finalWeighting), 0.9f), 1));
 }

@@ -16,7 +16,7 @@ namespace SvoTracer.Kernel
 		RunBlockTrace,
 		EvaluateBackground,
 		EvaluateMaterial,
-		ResolveAccumulators,
+		ResolveRemainders,
 		DrawTrace,
 	}
 }
