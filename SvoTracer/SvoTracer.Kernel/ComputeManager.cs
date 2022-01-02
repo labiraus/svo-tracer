@@ -319,7 +319,7 @@ namespace SvoTracer.Kernel
 					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "outputImage", "input" };
 					break;
 				case KernelName.Init:
-					paramList = new[] { "Origins", "Directions", "FoVs", "Locations", "Depths", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "input" };
+					paramList = new[] { "Origins", "Directions", "FoVs", "Locations", "Depths", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "ParentTraces", "Weightings", "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "input" };
 					break;
 				case KernelName.RunBaseTrace:
 					paramList = new[] { "Bases", "Origins", "Directions", "FoVs", "Locations", "Weightings", "Depths", "BaseTraces", "BlockTraceQueue", "BlockTraceQueueID", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "input" };

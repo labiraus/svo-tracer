@@ -156,7 +156,6 @@ float3 normalVector(short pitch, short yaw);
 ushort getBase(Buffers buffers, uchar depth, ulong3 location);
 Block getBlock(Buffers buffers, uint address);
 uint getBlockAddress(Buffers buffers, uchar depth, ulong3 location);
-TraceData resolveTrace(Buffers buffers, float2 DoF, uint id);
 void saveBaseTrace(Buffers buffers, uint traceID);
 void saveBlockTrace(Buffers buffers, uint traceID);
 void saveNextStep(Buffers, TraceData *_trace);
@@ -164,8 +163,7 @@ void saveBackground(Buffers, TraceData trace);
 void saveMaterial(Buffers, TraceData trace);
 void saveAccumulator(Buffers buffers, TraceData trace, uchar colourR, uchar colourG, uchar colourB, uint parentID);
 void updateTrace(Buffers buffers, TraceData trace);
-void requestChild(Buffers buffers, ChildRequest request);
-ChildRequest buildChildRequest(uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location);
+void requestChild(Buffers buffers, uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location);
 void updateUsage(Buffers buffers, uint address, ushort tick);
 
 // Tree
@@ -180,6 +178,7 @@ bool leaving(TraceData trace);
 void traverseChunk(uchar depth, TraceData *_trace);
 void traverseChunkNormal(uchar depth, float3 normal, TraceData *_trace);
 TraceData setupInitialTrace(TraceInput input);
+TraceData resolveTrace(Buffers buffers, float2 DoF, uint id);
 TraceData setupTrace(ulong3 location, float3 normal, float3 direction, uchar depth, float fov, uchar weighting, TraceInput input);
 bool traceIntoVolume(TraceData *_trace);
 Block average(uint address, Buffers buffers, TraceData trace);
@@ -264,26 +263,6 @@ uint getBlockAddress(Buffers buffers, uchar depth, ulong3 location) {
   return address;
 }
 
-TraceData resolveTrace(Buffers buffers, float2 dof, uint id) {
-  float3 direction = buffers.Directions[id];
-  TraceData trace = {
-      .Origin = buffers.Origins[id],
-      .Direction = direction,
-      .DoF = dof,
-      .FoV = buffers.FoVs[id],
-      .Location = buffers.Locations[id],
-      .Weighting = buffers.Weightings[id],
-      .Depth = buffers.Depths[id],
-      .ID = id,
-      .InvDirection = native_divide(1, direction),
-      .DirectionSignX = direction.x >= 0,
-      .DirectionSignY = direction.y >= 0,
-      .DirectionSignZ = direction.z >= 0,
-  };
-  setConeDepth(&trace);
-  return trace;
-}
-
 void saveBaseTrace(Buffers buffers, uint traceID) {
   uint id = atomic_inc(buffers.BaseTraceQueueID);
   buffers.BaseTraceQueue[id] = traceID;
@@ -312,7 +291,6 @@ void saveBackground(Buffers buffers, TraceData trace) {
 void saveMaterial(Buffers buffers, TraceData trace) {
   uint id = atomic_inc(buffers.MaterialQueueID);
   buffers.MaterialQueue[id] = trace.ID;
-  buffers.ParentTraces[id] = trace.ID;
 }
 
 void saveAccumulator(Buffers buffers, TraceData trace, uchar colourR, uchar colourG, uchar colourB, uint parentID) {
@@ -339,21 +317,16 @@ void updateTrace(Buffers buffers, TraceData trace) {
   buffers.Depths[trace.ID] = trace.Depth;
 }
 
-void requestChild(Buffers buffers, ChildRequest request) {
+void requestChild(Buffers buffers, uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location) {
   uint id = atomic_inc(buffers.ChildRequestID);
+  ChildRequest request = {.Address = address,
+                          .Tick = tick,
+                          .Depth = depth,
+                          .Location[0] = location.x,
+                          .Location[1] = location.y,
+                          .Location[2] = location.z,
+                          .TreeSize = treeSize};
   buffers.ChildRequests[id] = request;
-}
-
-ChildRequest buildChildRequest(uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location) {
-  ChildRequest request;
-  request.Address = address;
-  request.Tick = tick;
-  request.Depth = depth;
-  request.Location[0] = location.x;
-  request.Location[1] = location.y;
-  request.Location[2] = location.z;
-  request.TreeSize = treeSize;
-  return request;
 }
 
 void updateUsage(Buffers buffers, uint address, ushort tick) {
@@ -569,11 +542,31 @@ TraceData setupInitialTrace(TraceInput input) {
       .Tick = input.Tick,
       .FoV = native_divide(input.FoV[0], input.ScreenSize.x),
       .MaxChildRequestId = input.MaxChildRequestId,
-      .Weighting = 1,
+      .Weighting = 255,
       .Depth = 1,
       .ID = coord.x + coord.y * input.ScreenSize.x,
   };
   return traceData;
+}
+
+TraceData resolveTrace(Buffers buffers, float2 dof, uint id) {
+  float3 direction = buffers.Directions[id];
+  TraceData trace = {
+      .Origin = buffers.Origins[id],
+      .Direction = direction,
+      .DoF = dof,
+      .FoV = buffers.FoVs[id],
+      .Location = buffers.Locations[id],
+      .Weighting = buffers.Weightings[id],
+      .Depth = buffers.Depths[id],
+      .ID = id,
+      .InvDirection = native_divide(1, direction),
+      .DirectionSignX = direction.x >= 0,
+      .DirectionSignY = direction.y >= 0,
+      .DirectionSignZ = direction.z >= 0,
+  };
+  setConeDepth(&trace);
+  return trace;
 }
 
 TraceData setupTrace(ulong3 location, float3 normal, float3 direction, uchar depth, float fov, uchar weighting, TraceInput input) {
@@ -1162,7 +1155,7 @@ uint findAddress(global Block *Blocks, global Usage *Usages, global uint *ChildR
     // Hit the bottom of the tree and not found it
     if (Blocks[address].Child == UINT_MAX) {
       Buffers buffers;
-      requestChild(buffers, buildChildRequest(address, i, inputData.Tick, depth - i, location));
+      requestChild(buffers, address, i, inputData.Tick, depth - i, location);
       helpDereference(Blocks, Usages, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining, semaphor, inputData.Tick);
       return UINT_MAX;
     }
@@ -1312,7 +1305,8 @@ kernel void graft(global Block *Blocks, global Usage *Usages, global uint *Child
 
 kernel void init(global float3 *Origins, global float3 *Directions, global float *FoVs, global ulong3 *Locations, global uchar *Depths,
                  global uint *BaseTraceQueue, global uint *BaseTraceQueueID, global uint *BackgroundQueue, global uint *BackgroundQueueID,
-                 TraceInput input) {
+                 global uint *ParentTraces, global uchar *Weightings, global uint *FinalColourRs, global uint *FinalColourGs,
+                 global uint *FinalColourBs, global uint *FinalWeightings, TraceInput input) {
   Buffers buffers = {.Origins = Origins,
                      .Directions = Directions,
                      .FoVs = FoVs,
@@ -1322,19 +1316,27 @@ kernel void init(global float3 *Origins, global float3 *Directions, global float
                      .BaseTraceQueueID = BaseTraceQueueID,
                      .BackgroundQueue = BackgroundQueue,
                      .BackgroundQueueID = BackgroundQueueID,
+                     .Weightings = Weightings,
+                     .ParentTraces = ParentTraces,
                      .BaseDepth = input.BaseDepth};
   TraceData trace = setupInitialTrace(input);
   // Move ray to bounding volume
   if (traceIntoVolume(&trace)) {
     saveBaseTrace(buffers, trace.ID);
-    buffers.Locations[trace.ID] = trace.Location;
-    buffers.Depths[trace.ID] = 1;
+    Locations[trace.ID] = trace.Location;
+    Depths[trace.ID] = 1;
   } else
     saveBackground(buffers, trace);
 
-  buffers.Origins[trace.ID] = trace.Origin;
-  buffers.Directions[trace.ID] = trace.Direction;
-  buffers.FoVs[trace.ID] = trace.FoV;
+  Origins[trace.ID] = trace.Origin;
+  Directions[trace.ID] = trace.Direction;
+  FoVs[trace.ID] = trace.FoV;
+  ParentTraces[trace.ID] = trace.ID;
+  Weightings[trace.ID] = trace.Weighting;
+  FinalColourRs[trace.ID] = 0;
+  FinalColourGs[trace.ID] = 0;
+  FinalColourBs[trace.ID] = 0;
+  FinalWeightings[trace.ID] = 0;
 }
 
 kernel void runBaseTrace(global ushort *Bases, global float3 *Origins, global float3 *Directions, global float *FoVs, global ulong3 *Locations,
@@ -1409,7 +1411,7 @@ kernel void runBlockTrace(global Block *Blocks, global Usage *Usages, global uin
                      .MaterialQueueID = MaterialQueueID,
                      .ParentTraces = ParentTraces,
                      .BaseDepth = input.BaseDepth};
-  TraceData trace = resolveTrace(buffers, (float2)(input.DoF[0], input.DoF[1]), buffers.BlockTraces[get_global_id(0)]);
+  TraceData trace = resolveTrace(buffers, (float2)(input.DoF[0], input.DoF[1]), BlockTraces[get_global_id(0)]);
   uint localAddress = getBlockAddress(buffers, trace.Depth, trace.Location);
   if (localAddress == UINT_MAX)
     return; // dud address needs handling!!
@@ -1443,7 +1445,7 @@ kernel void runBlockTrace(global Block *Blocks, global Usage *Usages, global uin
 
     // no child found, resolve colour of this voxel
     else if (block.Child == UINT_MAX) {
-      requestChild(buffers, buildChildRequest(localAddress, trace.Depth, trace.Tick, 1, trace.Location));
+      requestChild(buffers, localAddress, trace.Depth, trace.Tick, 1, trace.Location);
       complete = true;
     }
 
@@ -1457,10 +1459,10 @@ kernel void runBlockTrace(global Block *Blocks, global Usage *Usages, global uin
 
   if (!complete)
     saveNextStep(buffers, &trace);
-  else if (trace.Depth != 0)
-    saveMaterial(buffers, trace);
-  else
+  else if (trace.Depth == 0)
     saveBackground(buffers, trace);
+  else
+    saveMaterial(buffers, trace);
 
   updateTrace(buffers, trace);
 }
@@ -1493,6 +1495,7 @@ kernel void evaluateMaterial(global Block *Blocks, global Usage *Usages, global 
                      .FinalWeightings = FinalWeightings,
                      .AccumulatorID = AccumulatorID,
                      .BaseDepth = input.BaseDepth};
+
   uint traceID = buffers.MaterialQueue[get_global_id(0)];
   uint parentID = RootParentTraces[traceID];
   float3 direction = RootDirections[traceID];
@@ -1652,25 +1655,25 @@ kernel void evaluateBackground(global uint *BackgroundQueue, global float3 *Dire
   }
 
   uchar weighting = Weightings[traceID];
+  if (weighting < 255) {
+    uint colourBoundary = 0;
+    if (luminosity > input.AmbientLightLevel)
+      colourBoundary = 255;
+    // lightQuotient is the fraction that you'd increase colour by under white light, 0 = ambient light level
+    float lightQuotient = native_divide((float)abs_diff(luminosity, buffers.AmbientLightLevel), (luminosity + buffers.AmbientLightLevel) * 255.0f);
 
-  uint colourBoundary = 0;
-  if (luminosity > input.AmbientLightLevel)
-    colourBoundary = 255;
-  // lightQuotient is the fraction that you'd increase colour by under white light, 0 = ambient light level
-  float lightQuotient = native_divide((float)abs_diff(luminosity, buffers.AmbientLightLevel), (luminosity + buffers.AmbientLightLevel) * 255.0f);
+    uchar baseColourR = buffers.ColourRs[traceID];
+    uchar baseColourG = buffers.ColourGs[traceID];
+    uchar baseColourB = buffers.ColourBs[traceID];
 
-  // uchar baseColourR = buffers.ColourRs[traceID];
-  // uchar baseColourG = buffers.ColourGs[traceID];
-  // uchar baseColourB = buffers.ColourBs[traceID];
-
-  // buffers.ColourRs[traceID] = (baseColourR + lightQuotient * colourR * (colourBoundary - baseColourR));
-  // buffers.ColourGs[traceID] = (baseColourG + lightQuotient * colourG * (colourBoundary - baseColourG));
-  // buffers.ColourBs[traceID] = (baseColourB + lightQuotient * colourB * (colourBoundary - baseColourB));
-  colourR = 150;
-  colourG = 100;
-  colourB = 250;
-
-  atomic_add(&FinalWeightings[parentID], weighting);
+    colourR = (baseColourR + lightQuotient * colourR * (colourBoundary - baseColourR));
+    colourG = (baseColourG + lightQuotient * colourG * (colourBoundary - baseColourG));
+    colourB = (baseColourB + lightQuotient * colourB * (colourBoundary - baseColourB));
+    // colourR = 150;
+    // colourG = 100;
+    // colourB = 250;
+  }
+  atomic_add(&FinalWeightings[parentID], 255);
 
   if (luminosity > 0) {
     atomic_add(&FinalColourRs[parentID], colourR * weighting);
@@ -1683,20 +1686,24 @@ kernel void resolveRemainders(global uint *MaterialQueue, global uint *FinalWeig
                               TraceInput input) {
   uint traceID = MaterialQueue[get_global_id(0)];
   uint parentID = ParentTraces[traceID];
-  uint weighting = Weightings[traceID];
+  uchar weighting = Weightings[traceID];
 
-  atomic_add(&FinalWeightings[parentID], weighting);
+  atomic_add(&FinalWeightings[parentID], (uint)weighting);
 }
 
 kernel void drawTrace(global uint *FinalColourRs, global uint *FinalColourGs, global uint *FinalColourBs, global uint *FinalWeightings,
                       __write_only image2d_t outputImage, TraceInput input) {
   uint traceID = get_global_id(0) + get_global_id(1) * input.ScreenSize.x;
   int2 coord = (int2)((int)get_global_id(0), (int)get_global_id(1));
-  float finalWeighting = (float)FinalWeightings[traceID] * 255.0f;
-
-  // Drawn colour is final colour / final weighting * 255
-  write_imagef(outputImage, coord,
-               (float4)(fmin(native_divide((float)FinalColourRs[traceID], finalWeighting), 1),
-                        fmin(native_divide((float)FinalColourGs[traceID], finalWeighting), 0.9f),
-                        fmin(native_divide((float)FinalColourBs[traceID], finalWeighting), 0.9f), 1));
+  uint weighting = FinalWeightings[traceID];
+  if (weighting == 0) {
+    write_imagef(outputImage, coord, (float4)(0.75f, 0, 0, 1));
+  } else {
+    float finalWeighting = (float)weighting * 255.0f;
+    // Drawn colour is final colour / final weighting * 255
+    write_imagef(outputImage, coord,
+                 (float4)(fmin(native_divide((float)FinalColourRs[traceID], finalWeighting), 1),
+                          fmin(native_divide((float)FinalColourGs[traceID], finalWeighting), 1),
+                          fmin(native_divide((float)FinalColourBs[traceID], finalWeighting), 1), 1));
+  }
 }

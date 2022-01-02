@@ -13,7 +13,6 @@ using OpenTK.Graphics;
 using OpenTK.Windowing.Common;
 using System.Runtime.InteropServices;
 using SvoTracer.Domain.Serializers;
-using System.Collections.Generic;
 using CLEvent = OpenTK.Compute.OpenCL.CLEvent;
 
 namespace SvoTracer.Window
@@ -217,7 +216,6 @@ namespace SvoTracer.Window
 				// Set up the buffers
 				framebuffer = GL.CreateFramebuffer();
 				GL.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
-				InitScreenBuffers();
 				initialized = true;
 			}
 			catch (Exception ex)
@@ -342,12 +340,12 @@ namespace SvoTracer.Window
 			Stopwatch timer = new();
 			timer.Start();
 			//Flush child request buffer
-			var (renderbuffer, waitEvent) = _computeManager.AcquireRenderbuffer();
+			var (renderbuffer, acquireRenderBufferEvent) = _computeManager.AcquireRenderbuffer();
 			_computeManager.SetArg(KernelName.Trace, "outputImage", renderbuffer);
-			var waitEvent2 = _computeManager.WriteBuffer(BufferName.ChildRequestID, new uint[] { 0 });
+			var resetChildRequestEvent = _computeManager.WriteBuffer(BufferName.ChildRequestID, new uint[] { 0 });
 			_computeManager.SetArg(KernelName.Trace, "input", _stateManager.TraceInput.Serialize());
 
-			var kernelRun = _computeManager.Enqueue(KernelName.Trace, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { waitEvent, waitEvent2 });
+			var kernelRun = _computeManager.Enqueue(KernelName.Trace, new[] { (nuint)Size.X, (nuint)Size.Y }, new[] { acquireRenderBufferEvent, resetChildRequestEvent });
 			_computeManager.ReleaseRenderbuffer(new[] { kernelRun });
 			_computeManager.Flush();
 			timer.Stop();
@@ -363,10 +361,6 @@ namespace SvoTracer.Window
 
 			var waitList = new CLEvent[]
 			{
-				_computeManager.FillBuffer(BufferName.FinalColourRs, 0),
-				_computeManager.FillBuffer(BufferName.FinalColourGs, 0),
-				_computeManager.FillBuffer(BufferName.FinalColourBs, 0),
-				_computeManager.FillBuffer(BufferName.FinalWeightings, 0),
 				_computeManager.ZeroIDBuffer(BufferName.BlockTraceQueueID, null),
 				_computeManager.ZeroIDBuffer(BufferName.BaseTraceQueueID, null),
 				_computeManager.ZeroIDBuffer(BufferName.BackgroundQueueID, null),
@@ -389,17 +383,22 @@ namespace SvoTracer.Window
 
 			traceInput.DoF = Vector2.Zero;
 			input = traceInput.Serialize();
-			_computeManager.SetArg(KernelName.RunBaseTrace, "input", input);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "input", input);
+
+			// resolve initial background illumination
+			_computeManager.SetArg(KernelName.EvaluateBackground, "input", input);
+			var backgroundEvent = EvaulateBackground(null);
 
 			// trace material rays
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "input", input);
-			var evaluateMaterialEvent = EvaulateMaterial(null);
+			var evaluateMaterialEvent = EvaulateMaterial(new[] { backgroundEvent });
+
+			_computeManager.SetArg(KernelName.RunBaseTrace, "input", input);
+			_computeManager.SetArg(KernelName.RunBlockTrace, "input", input);
 			RunTraces(evaluateMaterialEvent);
 
 			// resolve background illumination
 			_computeManager.SetArg(KernelName.EvaluateBackground, "input", input);
-			var backgroundEvent = EvaulateBackground(null);
+			backgroundEvent = EvaulateBackground(null);
 
 			// second bounce
 			// _computeManager.SetArg(KernelName.EvaluateMaterial, "input", input);
@@ -411,6 +410,7 @@ namespace SvoTracer.Window
 
 			// _computeManager.SetArg(KernelName.EvaluateBackground, "input", input);
 			// backgroundEvent = EvaulateBackground(null);
+
 			_computeManager.SetArg(KernelName.ResolveRemainders, "input", input);
 			var resolveEvent = ResolveRemainders(new[] { backgroundEvent });
 
@@ -436,9 +436,14 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.Init, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
 			_computeManager.SetArg(KernelName.Init, "BackgroundQueue", BufferName.BackgroundQueue);
 			_computeManager.SetArg(KernelName.Init, "BackgroundQueueID", BufferName.BackgroundQueueID);
+			_computeManager.SetArg(KernelName.Init, "Weightings", BufferName.Weightings);
+			_computeManager.SetArg(KernelName.Init, "ParentTraces", BufferName.ParentTraces);
+			_computeManager.SetArg(KernelName.Init, "FinalColourRs", BufferName.FinalColourRs);
+			_computeManager.SetArg(KernelName.Init, "FinalColourGs", BufferName.FinalColourGs);
+			_computeManager.SetArg(KernelName.Init, "FinalColourBs", BufferName.FinalColourBs);
+			_computeManager.SetArg(KernelName.Init, "FinalWeightings", BufferName.FinalWeightings);
 
-			var initEvent = _computeManager.Enqueue(KernelName.Init, new[] { (nuint)Size.X, (nuint)Size.Y }, waitList);
-			return initEvent;
+			return _computeManager.Enqueue(KernelName.Init, new[] { (nuint)Size.X, (nuint)Size.Y }, waitList);
 		}
 
 		private void RunTraces(CLEvent initialEvent)
@@ -524,7 +529,6 @@ namespace SvoTracer.Window
 
 		private CLEvent EvaulateMaterial(CLEvent[] waitList)
 		{
-			var (_, accumulatorResetEvent) = _computeManager.ResetIDBuffer(BufferName.AccumulatorID, waitList);
 			var (materialQueueSize, materialQueueEvent) = _computeManager.ResetIDBuffer(BufferName.MaterialQueueID, waitList);
 			if (materialQueueSize == 0) return materialQueueEvent;
 
@@ -559,7 +563,7 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "FinalWeightings", BufferName.FinalWeightings);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "AccumulatorID", BufferName.AccumulatorID);
 
-			return _computeManager.Enqueue(KernelName.EvaluateMaterial, new[] { (nuint)materialQueueSize }, new[] { materialQueueEvent, accumulatorResetEvent });
+			return _computeManager.Enqueue(KernelName.EvaluateMaterial, new[] { (nuint)materialQueueSize }, new[] { materialQueueEvent });
 		}
 
 		private CLEvent EvaulateBackground(CLEvent[] waitList)
