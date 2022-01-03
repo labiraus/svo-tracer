@@ -328,13 +328,13 @@ namespace SvoTracer.Kernel
 					paramList = new[] { "Blocks", "Usages", "ChildRequestID", "ChildRequests", "Origins", "Directions", "FoVs", "Locations", "Weightings", "Depths", "BlockTraces", "BlockTraceQueue", "BlockTraceQueueID", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "MaterialQueue", "MaterialQueueID", "ParentTraces", "input" };
 					break;
 				case KernelName.EvaluateMaterial:
-					paramList = new[] { "Blocks", "Usages", "Origins", "Directions", "FoVs", "Locations", "Depths", "Weightings", "ColourRs", "ColourGs", "ColourBs", "RayLengths", "Luminosities", "MaterialQueue", "ParentTraces", "RootDirections", "RootLocations", "RootDepths", "RootWeightings", "RootParentTraces", "BaseTraceQueue", "BaseTraceQueueID", "FinalWeightings", "AccumulatorID", "input" };
+					paramList = new[] { "Blocks", "Usages", "Origins", "Directions", "FoVs", "Locations", "Depths", "Weightings", "ColourRs", "ColourGs", "ColourBs", "RayLengths", "Luminosities", "MaterialQueue", "ParentTraces", "RootDirections", "RootLocations", "RootDepths", "RootWeightings", "RootParentTraces", "BaseTraceQueue", "BaseTraceQueueID", "FinalWeightings", "AccumulatorID", "BackgroundQueue", "BackgroundQueueID", "input" };
 					break;
 				case KernelName.EvaluateBackground:
 					paramList = new[] { "BackgroundQueue", "Directions", "ParentTraces", "ColourRs", "ColourGs", "ColourBs", "Weightings", "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "input" };
 					break;
 				case KernelName.ResolveRemainders:
-					paramList = new[] { "MaterialQueue", "FinalWeightings", "Weightings", "ParentTraces", "input" };
+					paramList = new[] { "Blocks", "Usages", "Locations", "Depths", "MaterialQueue", "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "Weightings", "ParentTraces", "input" };
 					break;
 				case KernelName.DrawTrace:
 					paramList = new[] { "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "outputImage", "input" };

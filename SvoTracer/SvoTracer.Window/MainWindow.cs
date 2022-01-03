@@ -388,17 +388,17 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.EvaluateBackground, "input", input);
 			var backgroundEvent = EvaulateBackground(null);
 
-			// trace material rays
-			_computeManager.SetArg(KernelName.EvaluateMaterial, "input", input);
-			var evaluateMaterialEvent = EvaulateMaterial(new[] { backgroundEvent });
+			//// trace material rays
+			//_computeManager.SetArg(KernelName.EvaluateMaterial, "input", input);
+			//var evaluateMaterialEvent = EvaulateMaterial(new[] { backgroundEvent });
 
-			_computeManager.SetArg(KernelName.RunBaseTrace, "input", input);
-			_computeManager.SetArg(KernelName.RunBlockTrace, "input", input);
-			RunTraces(evaluateMaterialEvent);
+			//_computeManager.SetArg(KernelName.RunBaseTrace, "input", input);
+			//_computeManager.SetArg(KernelName.RunBlockTrace, "input", input);
+			//RunTraces(evaluateMaterialEvent);
 
-			// resolve background illumination
-			_computeManager.SetArg(KernelName.EvaluateBackground, "input", input);
-			backgroundEvent = EvaulateBackground(null);
+			//// resolve background illumination
+			//_computeManager.SetArg(KernelName.EvaluateBackground, "input", input);
+			//backgroundEvent = EvaulateBackground(null);
 
 			// second bounce
 			// _computeManager.SetArg(KernelName.EvaluateMaterial, "input", input);
@@ -529,9 +529,6 @@ namespace SvoTracer.Window
 
 		private CLEvent EvaulateMaterial(CLEvent[] waitList)
 		{
-			var (materialQueueSize, materialQueueEvent) = _computeManager.ResetIDBuffer(BufferName.MaterialQueueID, waitList);
-			if (materialQueueSize == 0) return materialQueueEvent;
-
 			_computeManager.Swap(BufferName.RootDirections, BufferName.Directions);
 			_computeManager.Swap(BufferName.RootLocations, BufferName.Locations);
 			_computeManager.Swap(BufferName.RootDepths, BufferName.Depths);
@@ -561,8 +558,12 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "BaseTraceQueue", BufferName.BaseTraceQueue);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "FinalWeightings", BufferName.FinalWeightings);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "BackgroundQueue", BufferName.BackgroundQueue);
+			_computeManager.SetArg(KernelName.EvaluateMaterial, "BackgroundQueueID", BufferName.BackgroundQueueID);
 			_computeManager.SetArg(KernelName.EvaluateMaterial, "AccumulatorID", BufferName.AccumulatorID);
 
+			var (materialQueueSize, materialQueueEvent) = _computeManager.ResetIDBuffer(BufferName.MaterialQueueID, waitList);
+			if (materialQueueSize == 0) return materialQueueEvent;
 			return _computeManager.Enqueue(KernelName.EvaluateMaterial, new[] { (nuint)materialQueueSize }, new[] { materialQueueEvent });
 		}
 
@@ -588,14 +589,21 @@ namespace SvoTracer.Window
 
 		private CLEvent ResolveRemainders(CLEvent[] waitList)
 		{
-			var (remainderSize, resetRemainderEvent) = _computeManager.ResetIDBuffer(BufferName.MaterialQueueID, waitList);
-			if (remainderSize == 0) return resetRemainderEvent;
 
+			_computeManager.SetArg(KernelName.ResolveRemainders, "Blocks", BufferName.Blocks);
+			_computeManager.SetArg(KernelName.ResolveRemainders, "Usages", BufferName.Usages);
+			_computeManager.SetArg(KernelName.ResolveRemainders, "Locations", BufferName.Locations);
+			_computeManager.SetArg(KernelName.ResolveRemainders, "Depths", BufferName.Depths);
 			_computeManager.SetArg(KernelName.ResolveRemainders, "MaterialQueue", BufferName.MaterialQueue);
+			_computeManager.SetArg(KernelName.ResolveRemainders, "FinalColourRs", BufferName.FinalColourRs);
+			_computeManager.SetArg(KernelName.ResolveRemainders, "FinalColourGs", BufferName.FinalColourGs);
+			_computeManager.SetArg(KernelName.ResolveRemainders, "FinalColourBs", BufferName.FinalColourBs);
 			_computeManager.SetArg(KernelName.ResolveRemainders, "FinalWeightings", BufferName.FinalWeightings);
 			_computeManager.SetArg(KernelName.ResolveRemainders, "Weightings", BufferName.Weightings);
 			_computeManager.SetArg(KernelName.ResolveRemainders, "ParentTraces", BufferName.ParentTraces);
 
+			var (remainderSize, resetRemainderEvent) = _computeManager.ResetIDBuffer(BufferName.MaterialQueueID, waitList);
+			if (remainderSize == 0) return resetRemainderEvent;
 			return _computeManager.Enqueue(KernelName.ResolveRemainders, new[] { (nuint)remainderSize }, new[] { resetRemainderEvent });
 		}
 

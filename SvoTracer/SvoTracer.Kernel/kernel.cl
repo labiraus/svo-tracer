@@ -1055,25 +1055,24 @@ bool traceBlock(Geometry geometry, RayData *ray, TraceData *data, uint *depthHea
   return false;
 }
 
-bool traceBase(Geometry geometry, RayData *ray, TraceData *data) {
-  ushort chunk;
-  chunk = getBase(geometry, data->Depth, data->Location);
-  if (data->Depth <= geometry.baseDepth && (chunk >> (chunkPosition(data->Depth, data->Location) * 2) & 2) != 2) {
+bool traceBase(Geometry geometry, RayData *_ray, TraceData *_data) {
+  ushort chunk = getBase(geometry, _data->Depth, _data->Location);
+  if (_data->Depth <= geometry.baseDepth && (chunk >> (chunkPosition(_data->Depth, _data->Location) * 2) & 2) != 2) {
     // current chunk has no geometry, move to edge of chunk and go up a level if this is the edge of the block
-    ulong3 previousLocation = data->Location;
-    traverseChunk(data->Depth, data);
-    if (leaving(*data)) {
-      *ray = resolveBackgroundRayData(*data);
+    ulong3 previousLocation = _data->Location;
+    traverseChunk(_data->Depth, _data);
+    if (leaving(*_data)) {
+      *_ray = resolveBackgroundRayData(*_data);
       return true;
     }
-    data->Depth = comparePositions(data->Depth, previousLocation, *data);
+    _data->Depth = comparePositions(_data->Depth, previousLocation, *_data);
   } else {
-    if (data->Depth < geometry.baseDepth)
+    if (_data->Depth < geometry.baseDepth)
       // Still traversing base chunks
-      data->Depth++;
+      _data->Depth++;
     else
       // Traversing blocks
-      data->Depth = geometry.baseDepth + 2;
+      _data->Depth = geometry.baseDepth + 2;
   }
   return false;
 }
