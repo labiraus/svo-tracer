@@ -141,6 +141,7 @@ typedef struct {
   global uint *AccumulatorID;
   const uchar BaseDepth;
   const uchar AmbientLightLevel;
+  local uint *localQueue;
 } Buffers;
 
 // Inline math
@@ -153,17 +154,18 @@ void releaseSemaphor(global int *semaphor);
 float3 normalVector(short pitch, short yaw);
 
 // Memory
+uint increment(local uint localQueue[5], global uint *queueID, bool action);
 ushort getBase(Buffers buffers, uchar depth, ulong3 location);
 Block getBlock(Buffers buffers, uint address);
 uint getBlockAddress(Buffers buffers, uchar depth, ulong3 location);
-void saveBaseTrace(Buffers buffers, uint traceID);
-void saveBlockTrace(Buffers buffers, uint traceID);
-void saveNextStep(Buffers, TraceData *_trace);
-void saveBackground(Buffers, TraceData trace);
-void saveMaterial(Buffers, TraceData trace);
+void saveBaseTrace(Buffers buffers, uint traceID, bool action);
+void saveBlockTrace(Buffers buffers, uint traceID, bool action);
+void saveNextStep(Buffers, TraceData *_trace, bool action);
+void saveBackground(Buffers, TraceData trace, bool action);
+void saveMaterial(Buffers, TraceData trace, bool action);
 void saveAccumulator(Buffers buffers, TraceData trace, uchar colourR, uchar colourG, uchar colourB, uint parentID);
 void updateTrace(Buffers buffers, TraceData trace);
-void requestChild(Buffers buffers, uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location);
+void requestChild(Buffers buffers, uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location, bool action);
 void updateUsage(Buffers buffers, uint address, ushort tick);
 
 // Tree
@@ -244,6 +246,46 @@ float3 normalVector(short pitch, short yaw) {
 
 // Memory
 
+uint increment(local uint localQueue[5], global uint *queueID, bool action) {
+  int localQueuePosition = get_local_id(0) % 4;
+  // Reset localQueue to 0;
+  if (get_local_id(0) < 5 && get_local_id(1) == 0)
+    localQueue[get_local_id(0)] = 0;
+  work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+  uint id = 0;
+  // Increment localQueue if an action is being performed
+  if (action)
+    id = atomic_inc(&localQueue[localQueuePosition]);
+
+  work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+  atomic_work_item_fence(CLK_LOCAL_MEM_FENCE, memory_order_acquire, memory_scope_work_item);
+  if (get_local_id(0) == 0 && get_local_id(1) == 0) {
+    uint sum = localQueue[0] + localQueue[1] + localQueue[2] + localQueue[3];
+    // Only one local thread updates the global variable
+    // If no local thread is performing an action, no further work is required
+    if (sum > 0)
+      localQueue[4] = atomic_add(queueID, sum);
+    atomic_work_item_fence(CLK_LOCAL_MEM_FENCE, memory_order_release, memory_scope_work_group);
+  }
+
+  // Final id is global variable's starting value, plus the local queue position, plus total for previous local queues
+  if (localQueuePosition > 0)
+    id += localQueue[0];
+  if (localQueuePosition > 1)
+    id += localQueue[1];
+  if (localQueuePosition > 2)
+    id += localQueue[2];
+  // Ensure atomic_add takes place before final return
+  atomic_work_item_fence(CLK_LOCAL_MEM_FENCE, memory_order_acq_rel, memory_scope_work_item);
+  // work_group_barrier(CLK_LOCAL_MEM_FENCE);
+  if (action)
+    return id + localQueue[4];
+  else
+    return 0;
+}
+
 ushort getBase(Buffers buffers, uchar depth, ulong3 location) {
   uint address = powSum(depth - 1) + baseLocation(depth, location);
   return buffers.Bases[address];
@@ -261,33 +303,35 @@ uint getBlockAddress(Buffers buffers, uchar depth, ulong3 location) {
   return address;
 }
 
-void saveBaseTrace(Buffers buffers, uint traceID) {
-  uint id = atomic_inc(buffers.BaseTraceQueueID);
+void saveBaseTrace(Buffers buffers, uint traceID, bool action) {
+  // uint id = atomic_inc(buffers.BaseTraceQueueID);
+  uint id = increment(buffers.localQueue, buffers.BaseTraceQueueID, action);
+  if (!action)
+    return;
   buffers.BaseTraceQueue[id] = traceID;
 }
 
-void saveBlockTrace(Buffers buffers, uint traceID) {
-  uint id = atomic_inc(buffers.BlockTraceQueueID);
+void saveBlockTrace(Buffers buffers, uint traceID, bool action) {
+  // uint id = atomic_inc(buffers.BlockTraceQueueID);
+  uint id = increment(buffers.localQueue, buffers.BlockTraceQueueID, action);
+  if (!action)
+    return;
   buffers.BlockTraceQueue[id] = traceID;
 }
 
-void saveNextStep(Buffers buffers, TraceData *_trace) {
-  if (_trace->Depth == buffers.BaseDepth + 1) {
-    _trace->Depth = buffers.BaseDepth;
-    saveBaseTrace(buffers, _trace->ID);
-  } else if (_trace->Depth > (buffers.BaseDepth + 1))
-    saveBlockTrace(buffers, _trace->ID);
-  else
-    saveBaseTrace(buffers, _trace->ID);
-}
-
-void saveBackground(Buffers buffers, TraceData trace) {
-  uint id = atomic_inc(buffers.BackgroundQueueID);
+void saveBackground(Buffers buffers, TraceData trace, bool action) {
+  // uint id = atomic_inc(buffers.BackgroundQueueID);
+  uint id = increment(buffers.localQueue, buffers.BackgroundQueueID, action);
+  if (!action)
+    return;
   buffers.BackgroundQueue[id] = trace.ID;
 }
 
-void saveMaterial(Buffers buffers, TraceData trace) {
-  uint id = atomic_inc(buffers.MaterialQueueID);
+void saveMaterial(Buffers buffers, TraceData trace, bool action) {
+  // uint id = atomic_inc(buffers.MaterialQueueID);
+  uint id = increment(buffers.localQueue, buffers.MaterialQueueID, action);
+  if (!action)
+    return;
   buffers.MaterialQueue[id] = trace.ID;
 }
 
@@ -295,10 +339,9 @@ void saveAccumulator(Buffers buffers, TraceData trace, uchar colourR, uchar colo
   trace.ID = atomic_inc(buffers.AccumulatorID);
   buffers.ParentTraces[trace.ID] = parentID;
   buffers.Weightings[trace.ID] = trace.Weighting;
-
   if (trace.Weighting > 5) {
-    // saveBaseTrace(buffers, trace.ID);
-    saveBackground(buffers, trace);
+    uint backgroundId = atomic_inc(buffers.BackgroundQueueID);
+    buffers.BackgroundQueue[backgroundId] = trace.ID;
     buffers.Luminosities[trace.ID] = 0;
     buffers.ColourRs[trace.ID] = colourR;
     buffers.ColourGs[trace.ID] = colourG;
@@ -316,8 +359,11 @@ void updateTrace(Buffers buffers, TraceData trace) {
   buffers.Depths[trace.ID] = trace.Depth;
 }
 
-void requestChild(Buffers buffers, uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location) {
-  uint id = atomic_inc(buffers.ChildRequestID);
+void requestChild(Buffers buffers, uint address, uchar depth, ushort tick, uchar treeSize, ulong3 location, bool action) {
+  // uint id = atomic_inc(buffers.ChildRequestID);
+  uint id = increment(buffers.localQueue, buffers.ChildRequestID, action);
+  if (!action)
+    return;
   ChildRequest request = {.Address = address,
                           .Tick = tick,
                           .Depth = depth,
@@ -1154,7 +1200,8 @@ uint findAddress(global Block *Blocks, global Usage *Usages, global uint *ChildR
     // Hit the bottom of the tree and not found it
     if (Blocks[address].Child == UINT_MAX) {
       Buffers buffers;
-      requestChild(buffers, address, i, inputData.Tick, depth - i, location);
+      // this is going to break
+      requestChild(buffers, address, i, inputData.Tick, depth - i, location, true);
       helpDereference(Blocks, Usages, parentSize, parentResidency, parents, dereferenceQueue, dereferenceRemaining, semaphor, inputData.Tick);
       return UINT_MAX;
     }
@@ -1304,34 +1351,46 @@ kernel void graft(global Block *Blocks, global Usage *Usages, global uint *Child
 
 kernel void init(global float3 *Origins, global float3 *Directions, global float *FoVs, global ulong3 *Locations, global uchar *Depths,
                  global uint *BaseTraceQueue, global uint *BaseTraceQueueID, global uint *BackgroundQueue, global uint *BackgroundQueueID,
-                 global uint *ParentTraces, global uchar *Weightings, global uint *FinalColourRs, global uint *FinalColourGs,
-                 global uint *FinalColourBs, global uint *FinalWeightings, TraceInput input) {
-  Buffers buffers = {.Origins = Origins,
-                     .Directions = Directions,
-                     .FoVs = FoVs,
-                     .Locations = Locations,
-                     .Depths = Depths,
-                     .BaseTraceQueue = BaseTraceQueue,
-                     .BaseTraceQueueID = BaseTraceQueueID,
-                     .BackgroundQueue = BackgroundQueue,
-                     .BackgroundQueueID = BackgroundQueueID,
-                     .Weightings = Weightings,
-                     .ParentTraces = ParentTraces,
-                     .BaseDepth = input.BaseDepth};
+                 global uint *ParentTraces, global uchar *ColourRs, global uchar *ColourGs, global uchar *ColourBs, global uchar *Weightings,
+                 global uint *FinalColourRs, global uint *FinalColourGs, global uint *FinalColourBs, global uint *FinalWeightings, TraceInput input) {
+  local uint localQueue[5];
+  Buffers buffers = {
+      .Origins = Origins,
+      .Directions = Directions,
+      .FoVs = FoVs,
+      .Locations = Locations,
+      .Depths = Depths,
+      .BaseTraceQueue = BaseTraceQueue,
+      .BaseTraceQueueID = BaseTraceQueueID,
+      .BackgroundQueue = BackgroundQueue,
+      .BackgroundQueueID = BackgroundQueueID,
+      .Weightings = Weightings,
+      .ParentTraces = ParentTraces,
+      .BaseDepth = input.BaseDepth,
+      .localQueue = localQueue,
+  };
   TraceData trace = setupInitialTrace(input);
+  bool baseTrace = false;
+  bool background = false;
   // Move ray to bounding volume
   if (traceIntoVolume(&trace)) {
-    saveBaseTrace(buffers, trace.ID);
     Locations[trace.ID] = trace.Location;
     Depths[trace.ID] = 1;
+    baseTrace = true;
   } else
-    saveBackground(buffers, trace);
+    background = true;
+
+  saveBaseTrace(buffers, trace.ID, baseTrace);
+  saveBackground(buffers, trace, background);
 
   Origins[trace.ID] = trace.Origin;
   Directions[trace.ID] = trace.Direction;
   FoVs[trace.ID] = trace.FoV;
   ParentTraces[trace.ID] = trace.ID;
   Weightings[trace.ID] = trace.Weighting;
+  ColourRs[trace.ID] = 0;
+  ColourGs[trace.ID] = 0;
+  ColourBs[trace.ID] = 0;
   FinalColourRs[trace.ID] = 0;
   FinalColourGs[trace.ID] = 0;
   FinalColourBs[trace.ID] = 0;
@@ -1342,33 +1401,41 @@ kernel void runBaseTrace(global ushort *Bases, global float3 *Origins, global fl
                          global uchar *Weightings, global uchar *Depths, global uint *BaseTraces, global uint *BlockTraceQueue,
                          global uint *BlockTraceQueueID, global uint *BaseTraceQueue, global uint *BaseTraceQueueID, global uint *BackgroundQueue,
                          global uint *BackgroundQueueID, TraceInput input) {
-  Buffers buffers = {.Bases = Bases,
-                     .Origins = Origins,
-                     .Directions = Directions,
-                     .FoVs = FoVs,
-                     .Locations = Locations,
-                     .Weightings = Weightings,
-                     .Depths = Depths,
-                     .BaseTraces = BaseTraces,
-                     .BlockTraceQueue = BlockTraceQueue,
-                     .BlockTraceQueueID = BlockTraceQueueID,
-                     .BaseTraceQueue = BaseTraceQueue,
-                     .BaseTraceQueueID = BaseTraceQueueID,
-                     .BackgroundQueue = BackgroundQueue,
-                     .BackgroundQueueID = BackgroundQueueID,
-                     .BaseDepth = input.BaseDepth};
+  local uint localQueue[5];
+  Buffers buffers = {
+      .Bases = Bases,
+      .Origins = Origins,
+      .Directions = Directions,
+      .FoVs = FoVs,
+      .Locations = Locations,
+      .Weightings = Weightings,
+      .Depths = Depths,
+      .BaseTraces = BaseTraces,
+      .BlockTraceQueue = BlockTraceQueue,
+      .BlockTraceQueueID = BlockTraceQueueID,
+      .BaseTraceQueue = BaseTraceQueue,
+      .BaseTraceQueueID = BaseTraceQueueID,
+      .BackgroundQueue = BackgroundQueue,
+      .BackgroundQueueID = BackgroundQueueID,
+      .BaseDepth = input.BaseDepth,
+      .localQueue = localQueue,
+  };
 
   TraceData trace = resolveTrace(buffers, (float2)(input.DoF[0], input.DoF[1]), buffers.BaseTraces[get_global_id(0)]);
+  bool background = false;
+  bool baseTrace = false;
+  bool blockTrace = false;
+  bool nextStep = false;
   if ((getBase(buffers, trace.Depth, trace.Location) >> (chunkPosition(trace.Depth, trace.Location) * 2) & 2) != 2) {
     // current chunk has no buffers, move to edge of chunk and go up a level if this is the edge of the block
     ulong3 previousLocation = trace.Location;
     traverseChunk(trace.Depth, &trace);
     if (leaving(trace)) {
       trace.Depth = 0;
-      saveBackground(buffers, trace);
+      background = true;
     } else {
       trace.Depth = comparePositions(trace.Depth, previousLocation, trace);
-      saveBaseTrace(buffers, trace.ID);
+      baseTrace = true;
     }
   } else {
     if (trace.Depth < buffers.BaseDepth)
@@ -1381,13 +1448,16 @@ kernel void runBaseTrace(global ushort *Bases, global float3 *Origins, global fl
     // saveNextStep(buffers, &trace);
     if (trace.Depth == buffers.BaseDepth + 1) {
       trace.Depth = buffers.BaseDepth;
-      saveBaseTrace(buffers, trace.ID);
+      baseTrace = true;
     } else if (trace.Depth > (buffers.BaseDepth + 1)) {
-      saveBlockTrace(buffers, trace.ID);
+      blockTrace = true;
     } else {
-      saveBaseTrace(buffers, trace.ID);
+      baseTrace = true;
     }
   }
+  saveBackground(buffers, trace, background);
+  saveBaseTrace(buffers, trace.ID, baseTrace);
+  saveBlockTrace(buffers, trace.ID, blockTrace);
 
   updateTrace(buffers, trace);
 }
@@ -1397,36 +1467,39 @@ kernel void runBlockTrace(global Block *Blocks, global Usage *Usages, global uin
                           global uchar *Depths, global uint *BlockTraces, global uint *BlockTraceQueue, global uint *BlockTraceQueueID,
                           global uint *BaseTraceQueue, global uint *BaseTraceQueueID, global uint *BackgroundQueue, global uint *BackgroundQueueID,
                           global uint *MaterialQueue, global uint *MaterialQueueID, global uint *ParentTraces, TraceInput input) {
-  Buffers buffers = {.Blocks = Blocks,
-                     .Usages = Usages,
-                     .ChildRequestID = ChildRequestID,
-                     .ChildRequests = ChildRequests,
-                     .Origins = Origins,
-                     .Directions = Directions,
-                     .FoVs = FoVs,
-                     .Locations = Locations,
-                     .Weightings = Weightings,
-                     .Depths = Depths,
-                     .BlockTraces = BlockTraces,
-                     .BlockTraceQueue = BlockTraceQueue,
-                     .BlockTraceQueueID = BlockTraceQueueID,
-                     .BaseTraceQueue = BaseTraceQueue,
-                     .BaseTraceQueueID = BaseTraceQueueID,
-                     .BackgroundQueue = BackgroundQueue,
-                     .BackgroundQueueID = BackgroundQueueID,
-                     .MaterialQueue = MaterialQueue,
-                     .MaterialQueueID = MaterialQueueID,
-                     .ParentTraces = ParentTraces,
-                     .BaseDepth = input.BaseDepth};
+  local uint localQueue[5];
+  Buffers buffers = {
+      .Blocks = Blocks,
+      .Usages = Usages,
+      .ChildRequestID = ChildRequestID,
+      .ChildRequests = ChildRequests,
+      .Origins = Origins,
+      .Directions = Directions,
+      .FoVs = FoVs,
+      .Locations = Locations,
+      .Weightings = Weightings,
+      .Depths = Depths,
+      .BlockTraces = BlockTraces,
+      .BlockTraceQueue = BlockTraceQueue,
+      .BlockTraceQueueID = BlockTraceQueueID,
+      .BaseTraceQueue = BaseTraceQueue,
+      .BaseTraceQueueID = BaseTraceQueueID,
+      .BackgroundQueue = BackgroundQueue,
+      .BackgroundQueueID = BackgroundQueueID,
+      .MaterialQueue = MaterialQueue,
+      .MaterialQueueID = MaterialQueueID,
+      .ParentTraces = ParentTraces,
+      .BaseDepth = input.BaseDepth,
+      .localQueue = localQueue,
+  };
   TraceData trace = resolveTrace(buffers, (float2)(input.DoF[0], input.DoF[1]), BlockTraces[get_global_id(0)]);
   uint localAddress = getBlockAddress(buffers, trace.Depth, trace.Location);
-  if (localAddress == UINT_MAX)
-    return; // dud address needs handling!!
   Block block = getBlock(buffers, localAddress);
 
   updateUsage(buffers, localAddress >> 3, input.Tick);
 
   bool complete = false;
+  bool child = false;
 
   // Check if current block chunk contains geometry
   if (((block.Chunk >> (chunkPosition(trace.Depth, trace.Location) * 2)) & 2) != 2) {
@@ -1452,7 +1525,7 @@ kernel void runBlockTrace(global Block *Blocks, global Usage *Usages, global uin
 
     // no child found, resolve colour of this voxel
     else if (block.Child == UINT_MAX) {
-      requestChild(buffers, localAddress, trace.Depth, trace.Tick, min(1, (uchar)trace.ConeDepth - trace.Depth), trace.Location);
+      child = true;
       complete = true;
     }
 
@@ -1463,23 +1536,32 @@ kernel void runBlockTrace(global Block *Blocks, global Usage *Usages, global uin
     else
       complete = true;
   }
+  requestChild(buffers, localAddress, trace.Depth, trace.Tick, min(1, (uchar)trace.ConeDepth - trace.Depth), trace.Location, child);
 
+  bool background = false;
+  bool material = false;
+  bool blockTrace = false;
+  bool baseTrace = false;
   if (complete) {
     if (trace.Depth == 0)
-      saveBackground(buffers, trace);
+      background = true;
     else
-      saveMaterial(buffers, trace);
+      material = true;
   } else {
     // saveNextStep(buffers, &trace);
     if (trace.Depth == buffers.BaseDepth + 1)
       trace.Depth = buffers.BaseDepth;
 
     if (trace.Depth > buffers.BaseDepth)
-      saveBlockTrace(buffers, trace.ID);
+      blockTrace = true;
     else
-      saveBaseTrace(buffers, trace.ID);
+      baseTrace = true;
   }
 
+  saveBackground(buffers, trace, background);
+  saveMaterial(buffers, trace, material);
+  saveBlockTrace(buffers, trace.ID, blockTrace);
+  saveBaseTrace(buffers, trace.ID, baseTrace);
   updateTrace(buffers, trace);
 }
 
@@ -1492,35 +1574,40 @@ kernel void evaluateMaterial(global Block *Blocks, global Usage *Usages, global 
                              TraceInput input) {
   if (input.FovConstant <= 0 || input.FovMultiplier >= 1 || input.FovMultiplier <= -1)
     return;
-  Buffers buffers = {.Blocks = Blocks,
-                     .Usages = Usages,
-                     .Origins = Origins,
-                     .Directions = Directions,
-                     .FoVs = FoVs,
-                     .Locations = Locations,
-                     .Depths = Depths,
-                     .Weightings = Weightings,
-                     .ColourRs = ColourRs,
-                     .ColourGs = ColourGs,
-                     .ColourBs = ColourBs,
-                     .RayLengths = RayLengths,
-                     .Luminosities = Luminosities,
-                     .MaterialQueue = MaterialQueue,
-                     .ParentTraces = ParentTraces,
-                     .BaseTraceQueue = BaseTraceQueue,
-                     .BaseTraceQueueID = BaseTraceQueueID,
-                     .FinalWeightings = FinalWeightings,
-                     .AccumulatorID = AccumulatorID,
-                     .BackgroundQueue = BackgroundQueue,
-                     .BackgroundQueueID = BackgroundQueueID,
-                     .BaseDepth = input.BaseDepth};
+
+  local uint localQueue[5];
+  Buffers buffers = {
+      .Blocks = Blocks,
+      .Usages = Usages,
+      .Origins = Origins,
+      .Directions = Directions,
+      .FoVs = FoVs,
+      .Locations = Locations,
+      .Depths = Depths,
+      .Weightings = Weightings,
+      .ColourRs = ColourRs,
+      .ColourGs = ColourGs,
+      .ColourBs = ColourBs,
+      .RayLengths = RayLengths,
+      .Luminosities = Luminosities,
+      .MaterialQueue = MaterialQueue,
+      .ParentTraces = ParentTraces,
+      .BaseTraceQueue = BaseTraceQueue,
+      .BaseTraceQueueID = BaseTraceQueueID,
+      .FinalWeightings = FinalWeightings,
+      .AccumulatorID = AccumulatorID,
+      .BackgroundQueue = BackgroundQueue,
+      .BackgroundQueueID = BackgroundQueueID,
+      .BaseDepth = input.BaseDepth,
+      .localQueue = localQueue,
+  };
 
   uint traceID = buffers.MaterialQueue[get_global_id(0)];
   uint parentID = RootParentTraces[traceID];
   float3 direction = RootDirections[traceID];
   ulong3 location = RootLocations[traceID];
   uchar depth = RootDepths[traceID];
-  uchar baseWeighting = RootWeightings[traceID];
+  float baseWeighting = RootWeightings[traceID];
   uint address = getBlockAddress(buffers, depth, location);
   if (address == UINT_MAX)
     return;
@@ -1549,10 +1636,17 @@ kernel void evaluateMaterial(global Block *Blocks, global Usage *Usages, global 
     return;
   }
 
+  if (dot(direction, normal) >= 0) {
+    // direction is parallel to the block face
+    saveAccumulator(buffers, setupTrace(location, normal, direction, depth, fov, baseWeighting, input), colourR, colourG, colourB, parentID);
+    return;
+  }
+
   float3 spineAxis = normalize(cross(direction, normal));
 
   float3 reflection = direction - (2 * dot(direction, normal) * normal);
   float dotProduct = dot(reflection, normal);
+
   if (dotProduct < fov)
     ringWeighting = weighting * dotProduct / fov;
 
@@ -1647,12 +1741,16 @@ kernel void evaluateMaterial(global Block *Blocks, global Usage *Usages, global 
 kernel void evaluateBackground(global uint *BackgroundQueue, global float3 *Directions, global uint *ParentTraces, global uchar *ColourRs,
                                global uchar *ColourGs, global uchar *ColourBs, global uchar *Weightings, global uint *FinalColourRs,
                                global uint *FinalColourGs, global uint *FinalColourBs, global uint *FinalWeightings, TraceInput input) {
-  Buffers buffers = {.Weightings = Weightings,
-                     .ParentTraces = ParentTraces,
-                     .ColourRs = ColourRs,
-                     .ColourGs = ColourGs,
-                     .ColourBs = ColourBs,
-                     .AmbientLightLevel = input.AmbientLightLevel};
+  local uint localQueue[5];
+  Buffers buffers = {
+      .Weightings = Weightings,
+      .ParentTraces = ParentTraces,
+      .ColourRs = ColourRs,
+      .ColourGs = ColourGs,
+      .ColourBs = ColourBs,
+      .AmbientLightLevel = input.AmbientLightLevel,
+      .localQueue = localQueue,
+  };
   uint traceID = BackgroundQueue[get_global_id(0)];
   uint parentID = ParentTraces[traceID];
   float dotprod = dot(Directions[traceID], (float3)(0, 0, -1));
@@ -1661,7 +1759,7 @@ kernel void evaluateBackground(global uint *BackgroundQueue, global float3 *Dire
   uchar colourB;
   uchar luminosity;
 
-  if (dotprod > 0.8) {
+  if (dotprod > 0.8f) {
     colourR = 255;
     colourG = 255;
     colourB = 255;
@@ -1670,7 +1768,7 @@ kernel void evaluateBackground(global uint *BackgroundQueue, global float3 *Dire
     colourR = 135;
     colourG = 206;
     colourB = 235;
-    luminosity = 100;
+    luminosity = 1;
   }
 
   uchar weighting = Weightings[traceID];
@@ -1678,7 +1776,7 @@ kernel void evaluateBackground(global uint *BackgroundQueue, global float3 *Dire
     uint colourBoundary = 0;
     if (luminosity > input.AmbientLightLevel)
       colourBoundary = 255;
-    // lightQuotient is the fraction that you'd increase colour by under white light, 0 = ambient light level
+    // lightQuotient is the fraction that you'd increase colour by under white light when ambient light level = 0
     float lightQuotient = native_divide((float)abs_diff(luminosity, buffers.AmbientLightLevel), (luminosity + buffers.AmbientLightLevel) * 255.0f);
 
     uchar baseColourR = buffers.ColourRs[traceID];
@@ -1688,11 +1786,8 @@ kernel void evaluateBackground(global uint *BackgroundQueue, global float3 *Dire
     colourR = (baseColourR + lightQuotient * colourR * (colourBoundary - baseColourR));
     colourG = (baseColourG + lightQuotient * colourG * (colourBoundary - baseColourG));
     colourB = (baseColourB + lightQuotient * colourB * (colourBoundary - baseColourB));
-    // colourR = 150;
-    // colourG = 100;
-    // colourB = 250;
   }
-  atomic_add(&FinalWeightings[parentID], 255);
+  atomic_add(&FinalWeightings[parentID], weighting);
 
   if (luminosity > 0) {
     atomic_add(&FinalColourRs[parentID], colourR * weighting);
@@ -1704,15 +1799,19 @@ kernel void evaluateBackground(global uint *BackgroundQueue, global float3 *Dire
 kernel void resolveRemainders(global Block *Blocks, global Usage *Usages, global ulong3 *Locations, global uchar *Depths, global uint *MaterialQueue,
                               global uint *FinalColourRs, global uint *FinalColourGs, global uint *FinalColourBs, global uint *FinalWeightings,
                               global uchar *Weightings, global uint *ParentTraces, TraceInput input) {
-  Buffers buffers = {.Blocks = Blocks,
-                     .Usages = Usages,
-                     .Locations = Locations,
-                     .Depths = Depths,
-                     .Weightings = Weightings,
-                     .MaterialQueue = MaterialQueue,
-                     .ParentTraces = ParentTraces,
-                     .FinalWeightings = FinalWeightings,
-                     .BaseDepth = input.BaseDepth};
+  local uint localQueue[5];
+  Buffers buffers = {
+      .Blocks = Blocks,
+      .Usages = Usages,
+      .Locations = Locations,
+      .Depths = Depths,
+      .Weightings = Weightings,
+      .MaterialQueue = MaterialQueue,
+      .ParentTraces = ParentTraces,
+      .FinalWeightings = FinalWeightings,
+      .BaseDepth = input.BaseDepth,
+      .localQueue = localQueue,
+  };
 
   uint traceID = MaterialQueue[get_global_id(0)];
   uint parentID = ParentTraces[traceID];

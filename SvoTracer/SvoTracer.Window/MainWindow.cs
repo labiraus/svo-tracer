@@ -14,6 +14,7 @@ using OpenTK.Windowing.Common;
 using System.Runtime.InteropServices;
 using SvoTracer.Domain.Serializers;
 using CLEvent = OpenTK.Compute.OpenCL.CLEvent;
+using System.Collections.Generic;
 
 namespace SvoTracer.Window
 {
@@ -22,7 +23,7 @@ namespace SvoTracer.Window
 		#region //Local Variables
 		private uint parentMaxSize = 6000;
 		private uint blockCount = 0;
-		private int bufferSize = 4000000;
+		private int bufferSize = 40000000;
 		private bool initialized = false;
 
 		private readonly ComputeManager _computeManager;
@@ -359,15 +360,14 @@ namespace SvoTracer.Window
 			//Flush child request buffer
 			var (renderbuffer, acquireBufferEvent) = _computeManager.AcquireRenderbuffer();
 
-			var waitList = new CLEvent[]
-			{
-				_computeManager.ZeroIDBuffer(BufferName.BlockTraceQueueID, null),
-				_computeManager.ZeroIDBuffer(BufferName.BaseTraceQueueID, null),
-				_computeManager.ZeroIDBuffer(BufferName.BackgroundQueueID, null),
-				_computeManager.ZeroIDBuffer(BufferName.MaterialQueueID, null),
-				_computeManager.ZeroIDBuffer(BufferName.AccumulatorID, null),
-				_computeManager.ZeroIDBuffer(BufferName.ChildRequestID, null)
-			};
+			var waitList = new List<CLEvent>();
+
+			waitList.Add(_computeManager.ZeroIDBuffer(BufferName.BlockTraceQueueID, null));
+			waitList.Add(_computeManager.ZeroIDBuffer(BufferName.BaseTraceQueueID, null));
+			waitList.Add(_computeManager.ZeroIDBuffer(BufferName.BackgroundQueueID, null));
+			waitList.Add(_computeManager.ZeroIDBuffer(BufferName.MaterialQueueID, null));
+			waitList.Add(_computeManager.ZeroIDBuffer(BufferName.AccumulatorID, null));
+			waitList.Add(_computeManager.ZeroIDBuffer(BufferName.ChildRequestID, null));
 
 			// Copy the struct so that changing the DoF later doesn't update the original
 			var traceInput = _stateManager.TraceInput;
@@ -375,7 +375,7 @@ namespace SvoTracer.Window
 
 			// trace initial rays
 			_computeManager.SetArg(KernelName.Init, "input", input);
-			CLEvent initEvent = Init(waitList);
+			CLEvent initEvent = Init(waitList.ToArray());
 
 			_computeManager.SetArg(KernelName.RunBaseTrace, "input", input);
 			_computeManager.SetArg(KernelName.RunBlockTrace, "input", input);
@@ -436,6 +436,9 @@ namespace SvoTracer.Window
 			_computeManager.SetArg(KernelName.Init, "BaseTraceQueueID", BufferName.BaseTraceQueueID);
 			_computeManager.SetArg(KernelName.Init, "BackgroundQueue", BufferName.BackgroundQueue);
 			_computeManager.SetArg(KernelName.Init, "BackgroundQueueID", BufferName.BackgroundQueueID);
+			_computeManager.SetArg(KernelName.Init, "ColourRs", BufferName.ColourRs);
+			_computeManager.SetArg(KernelName.Init, "ColourGs", BufferName.ColourGs);
+			_computeManager.SetArg(KernelName.Init, "ColourBs", BufferName.ColourBs);
 			_computeManager.SetArg(KernelName.Init, "Weightings", BufferName.Weightings);
 			_computeManager.SetArg(KernelName.Init, "ParentTraces", BufferName.ParentTraces);
 			_computeManager.SetArg(KernelName.Init, "FinalColourRs", BufferName.FinalColourRs);

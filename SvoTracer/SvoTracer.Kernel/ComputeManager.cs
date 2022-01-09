@@ -293,6 +293,7 @@ namespace SvoTracer.Kernel
 				KernelName.Prune => "prune",
 				KernelName.Graft => "graft",
 				KernelName.Trace => "trace",
+				KernelName.Test => "test",
 				KernelName.Init => "init",
 				KernelName.RunBaseTrace => "runBaseTrace",
 				KernelName.RunBlockTrace => "runBlockTrace",
@@ -318,8 +319,11 @@ namespace SvoTracer.Kernel
 				case KernelName.Trace:
 					paramList = new[] { "bases", "blocks", "usage", "childRequestId", "childRequests", "outputImage", "input" };
 					break;
+				case KernelName.Test:
+					paramList = new[] { "Origins", "Directions", "FoVs", "Locations", "Depths", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "ParentTraces", "ColourRs", "ColourGs", "ColourBs", "Weightings", "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "input" };
+					break;
 				case KernelName.Init:
-					paramList = new[] { "Origins", "Directions", "FoVs", "Locations", "Depths", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "ParentTraces", "Weightings", "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "input" };
+					paramList = new[] { "Origins", "Directions", "FoVs", "Locations", "Depths", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "ParentTraces", "ColourRs", "ColourGs", "ColourBs", "Weightings", "FinalColourRs", "FinalColourGs", "FinalColourBs", "FinalWeightings", "input" };
 					break;
 				case KernelName.RunBaseTrace:
 					paramList = new[] { "Bases", "Origins", "Directions", "FoVs", "Locations", "Weightings", "Depths", "BaseTraces", "BlockTraceQueue", "BlockTraceQueueID", "BaseTraceQueue", "BaseTraceQueueID", "BackgroundQueue", "BackgroundQueueID", "input" };

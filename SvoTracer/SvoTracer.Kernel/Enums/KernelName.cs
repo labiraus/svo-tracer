@@ -11,6 +11,7 @@ namespace SvoTracer.Kernel
 		Prune,
 		Graft,
 		Trace,
+		Test,
 		Init,
 		RunBaseTrace,
 		RunBlockTrace,

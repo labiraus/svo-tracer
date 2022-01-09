@@ -14,6 +14,13 @@ namespace SvoTracer.Window
 		private static void Main(string[] args)
 		{
 			//new EnqueueTest();
+			var test = new AtomicTest();
+			Console.Write("1: ");
+			test.Run("test1");
+			Console.Write("2: ");
+			test.Run("test2");
+			Console.Write("3: ");
+			test.Run("test3");
 			byte BaseDepth = 4;
 			byte maxDepth = 11;
 			var shape = Shapes.Spheres;
