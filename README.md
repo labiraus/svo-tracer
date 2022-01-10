@@ -1,6 +1,6 @@
 # svo-tracer
 
-An academic research project into GPU Sparse Voxel Octree Cone Tracing
+An academic research project into Wavefront GPU Sparse Voxel Octree Cone Tracing
 
 ## License
 
