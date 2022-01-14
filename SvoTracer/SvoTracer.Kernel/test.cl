@@ -1,15 +1,17 @@
-﻿uint increment2(local uint localQueue[4], global uint *queueID, bool action) {
+﻿uint increment2(local uint localQueue[5], global uint *queueID, bool action) {
   int localQueuePosition = get_local_id(0) % 4;
   // Reset localQueue to 0;
-  if (get_local_id(0) < 4 && get_local_id(1) == 0)
-    localQueue[localQueuePosition] = 0;
+  if (get_local_id(0) < 5 && get_local_id(1) == 0)
+    localQueue[get_local_id(0)] = 0;
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
   uint id = 0;
   // Increment localQueue if an action is being performed
   if (action)
     id = atomic_inc(&localQueue[localQueuePosition]);
 
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
   if (get_local_id(0) == 0 && get_local_id(1) == 0) {
     uint sum = localQueue[0] + localQueue[1] + localQueue[2] + localQueue[3];
     // Only one local thread updates the global variable
@@ -25,8 +27,12 @@
     id += localQueue[1];
   if (localQueuePosition > 2)
     id += localQueue[2];
+  // Ensure atomic_add takes place before final return
   work_group_barrier(CLK_LOCAL_MEM_FENCE);
-  return id + localQueue[4];
+  if (action)
+    return id + localQueue[4];
+  else
+    return 0;
 }
 
 uint increment(local uint localQueue[5], global uint *queueID, bool action) {
@@ -79,6 +85,7 @@ kernel void test2(global uint *queueID, global uint *idQueue) {
   uint id = increment2(localQueue, queueID, true);
   idQueue[id] = 1;
 }
+
 kernel void test3(global uint *queueID, global uint *idQueue) {
   local uint localQueue[5];
   uint id = increment(localQueue, queueID, true);

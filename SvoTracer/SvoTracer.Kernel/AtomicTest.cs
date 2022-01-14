@@ -86,7 +86,7 @@ namespace SvoTracer.Kernel
 		public void Run(string kernelName)
 		{
 			CLResultCode resultCode;
-			var workSize = new nuint[] { 10000000 };
+			var workSize = new nuint[] { 10000, 10000 };
 
 			var kernel = CL.CreateKernel(_program, kernelName, out resultCode);
 			ComputeManager.HandleResultCode(resultCode, "CreateKernel");
@@ -94,7 +94,7 @@ namespace SvoTracer.Kernel
 			var idBuffer = CL.CreateBuffer(_context, MemoryFlags.WriteOnly, (uint)(sizeof(uint)), IntPtr.Zero, out resultCode);
 			ComputeManager.HandleResultCode(resultCode, $"CreateBuffer");
 
-			var queueBuffer = CL.CreateBuffer(_context, MemoryFlags.ReadWrite, (uint)(workSize[0] * sizeof(uint)), IntPtr.Zero, out resultCode);
+			var queueBuffer = CL.CreateBuffer(_context, MemoryFlags.ReadWrite, (uint)(workSize.Aggregate(1, (a, b) => a * (int)b) * sizeof(uint)), IntPtr.Zero, out resultCode);
 			ComputeManager.HandleResultCode(resultCode, $"CreateBuffer");
 			resultCode = CL.EnqueueFillBuffer(_commandQueue, queueBuffer, new uint[] { 0 }, 0, workSize[0], null, out CLEvent kernelInit);
 
@@ -114,7 +114,7 @@ namespace SvoTracer.Kernel
 			var idOutput = new uint[1];
 			resultCode = CL.EnqueueReadBuffer(_commandQueue, idBuffer, true, 0, idOutput, new[] { kernelRun }, out CLEvent readRunId);
 			ComputeManager.HandleResultCode(resultCode, $"EnqueueReadBuffer:idOutput");
-			var queueOutput = new uint[workSize[0]];
+			var queueOutput = new uint[workSize.Aggregate(1, (a, b) => a * (int)b)];
 			resultCode = CL.EnqueueReadBuffer(_commandQueue, queueBuffer, true, 0, queueOutput, new[] { kernelRun }, out CLEvent readRunQueue);
 			ComputeManager.HandleResultCode(resultCode, $"EnqueueReadBuffer:queueOutput");
 
